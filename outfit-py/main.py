@@ -45,7 +45,6 @@ FINAL_LIMIT_DEFAULT = 8
 # ================= APP =================
 app = FastAPI(title="Styling Recommend API")
 
-
 @app.exception_handler(Exception)
 async def all_exception_handler(request: Request, exc: Exception):
     print("\n=== UNHANDLED ERROR ===")
