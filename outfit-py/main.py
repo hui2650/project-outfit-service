@@ -224,6 +224,9 @@ def color_compatible(user_color: str, cand_color: str) -> bool:
 
 # ================= YOLO PERSON + POSE FULLBODY =================
 def yolo_best_person_bbox(img: Image.Image) -> Tuple[Optional[Tuple[float,float,float,float]], int]:
+# ================= BODY CHECK =================
+def bbox_fullbody_and_feet(img: Image.Image) -> Tuple[bool, Dict]:
+    w, h = img.size
     r = yolo_person.predict(img, verbose=False)[0]
     if r.boxes is None or len(r.boxes) == 0:
         return None, 0
