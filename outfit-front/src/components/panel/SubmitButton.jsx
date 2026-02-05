@@ -9,8 +9,10 @@
 const SubmitButton = ({ loading, onSubmit }) => {
   return (
     <button
-      className={`w-full rounded-xl py-3 font-semibold ${
-        loading ? "bg-violet-300 text-white" : "bg-violet-500 text-white"
+      className={`w-full rounded-xl mt-4 py-3 font-semibold ${
+        loading
+          ? "bg-primary text-primary-foreground  opacity-50 cursor-not-allowed"
+          : "bg-primary text-primary-foreground "
       }`}
       onClick={onSubmit}
       disabled={loading}
