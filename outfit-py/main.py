@@ -11,7 +11,6 @@ from PIL import Image
 from fastapi import Request
 import traceback
 
-
 import httpx
 import torch
 from transformers import CLIPProcessor, CLIPModel
