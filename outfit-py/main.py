@@ -11,7 +11,6 @@ from PIL import Image
 from fastapi import Request
 import traceback
 
-
 import httpx
 import torch
 from transformers import CLIPProcessor, CLIPModel
@@ -45,7 +44,6 @@ FINAL_LIMIT_DEFAULT = 8
 
 # ================= APP =================
 app = FastAPI(title="Styling Recommend API")
-
 
 @app.exception_handler(Exception)
 async def all_exception_handler(request: Request, exc: Exception):
@@ -128,6 +126,7 @@ def color_compatible(user_color: str, cand_color: str) -> bool:
         return c in cool or c in neutral
 
     return False
+
 
 # ================= BODY CHECK =================
 def bbox_fullbody_and_feet(img: Image.Image) -> Tuple[bool, Dict]:
