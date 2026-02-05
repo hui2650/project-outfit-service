@@ -129,6 +129,7 @@ def color_compatible(user_color: str, cand_color: str) -> bool:
 
     return False
 
+
 # ================= BODY CHECK =================
 def bbox_fullbody_and_feet(img: Image.Image) -> Tuple[bool, Dict]:
     w, h = img.size
