@@ -1,10 +1,14 @@
 // 오른쪽 영역
 // 업로드, 텍스트, 제출 버튼을 모아서 배치
 
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faImage } from "@fortawesome/free-solid-svg-icons";
+
 import UploadDropzone from "./UploadDropzone";
 import TextQueryBox from "./TextQueryBox";
 import SubmitButton from "./SubmitButton";
 import React from "react";
+import CategoryChoice from "./CategoryChoice";
 
 const SidePanel = ({
   previewUrl,
@@ -20,10 +24,22 @@ const SidePanel = ({
   const pickFile = () => inputRef.current?.click();
 
   return (
-    <div className="relative flex flex-col justify-between h-full shrink-0 shadow">
-      <div className="p-8 bg-white shrink-0 border-b ">
-        <h1>아이템 입력</h1>
-        <h3>사진 또는 텍스트</h3>
+    <div className="relative flex flex-col justify-between h-full shrink-0 shadow-lg">
+      <div className="p-5 bg-white shrink-0 border-b ">
+        <div className="flex itmes-center gap-2">
+          <FontAwesomeIcon
+            icon={faImage}
+            style={{
+              color: "hsl(270, 70%, 60%)",
+              background: "hsl(270, 80%, 92%)",
+              borderRadius: "12px",
+            }}
+            className=" text-lg px-1.5 py-2 overflow-hidden"
+          />
+          <h2 className="font-foreground font-semibold text-base leading-loose">
+            아이템 입력
+          </h2>
+        </div>
       </div>
       <div className="p-8 flex-1 overflow-y-auto">
         <UploadDropzone
@@ -34,17 +50,21 @@ const SidePanel = ({
 
         {/* 버튼은 그냥 실행만 */}
         <button
-          className="mt-4 w-full rounded-xl bg-violet-600 text-white py-3 font-semibold"
+          className="mt-4 w-full rounded-xl bg-primary text-primary-foreground py-3 font-semibold"
           type="button"
           onClick={pickFile}
         >
           이미지 선택
         </button>
-        <hr />
+        <CategoryChoice />
         <TextQueryBox textQuery={textQuery} onTextQuery={onTextQuery} />
-      </div>
-      <div className="p-8 w-full bg-white shrink-0 border-t ">
+
         <SubmitButton loading={loading} onSubmit={onSubmit} />
+      </div>
+
+      <div className="p-6 w-full bg-white shrink-0 border-t ">
+        <h2 className="text-sm">게스트 사용자</h2>
+        <span className="text-xs">로그인하여 저장하기</span>
       </div>
     </div>
   );

@@ -2,10 +2,13 @@
 // 선택된 파일을 상위로 전달 onFile(file)
 // previewUrl은 상위에서 만들어 전달받아 표시만함
 
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faImage } from "@fortawesome/free-solid-svg-icons";
+
 const UploadDropzone = ({ previewUrl, onFile, inputRef }) => {
   return (
     <div
-      className="border rounded-xl p-4"
+      className="group relative border border-dashed border-2 rounded-xl h-52 flex items-center justify-center hover:border-primary hover:bg-primary/5 overflow-hidden"
       onClick={() => inputRef.current?.click()}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
@@ -19,9 +22,22 @@ const UploadDropzone = ({ previewUrl, onFile, inputRef }) => {
       }}
     >
       {previewUrl ? (
-        <img src={previewUrl} alt="preview" className="h-36 object-contain" />
+        <img
+          src={previewUrl}
+          alt="preview"
+          className="absolute w-full h-auto"
+        />
       ) : (
         <div className="flex flex-col justify-center items-center">
+          <div className="mb-6">
+            <FontAwesomeIcon
+              icon={faImage}
+              className=" text-4xl px-3.5 py-4 overflow-hidden rounded-[24px] transition-colors 
+              text-[hsl(270,70%,60%)] 
+              bg-[hsl(270,80%,92%)] 
+              group-hover:bg-[hsl(270,70%,55%)]/20"
+            />
+          </div>
           <div className="text-gray-500 text-sm text-center px-6">
             이미지를 드래그하거나
             <br />
