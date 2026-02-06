@@ -26,18 +26,24 @@ const ResultStage = ({ loading, chatLogs }) => {
 
   return (
     <div
-      className="h-full max-w-7xl overflow-y-auto px-4 [scrollbar-width:none] [-ms-overflow-style:none]"
+      className=" h-full max-w-7xl overflow-y-auto px-4 [scrollbar-width:none] [-ms-overflow-style:none]"
       style={{ scrollbarGutter: "stable" }}
     >
-      {chatLogs.length === 0 && (
-        <div className="text-gray-400">코디 추천을 시작해보세요</div>
-      )}
-
-      {chatLogs.map((turn) => (
-        <Turn key={turn.id} turn={turn} loading={loading} />
-      ))}
-      {/* 맨 아래 기준점 */}
-      <div ref={bottomRef} />
+      <div className="h-full">
+        {chatLogs.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-gray-400">
+            코디 추천을 시작해보세요
+          </div>
+        ) : (
+          <>
+            {chatLogs.map((turn) => (
+              <Turn key={turn.id} turn={turn} loading={loading} />
+            ))}
+            {/* 맨 아래 기준점 */}
+            <div ref={bottomRef} />
+          </>
+        )}
+      </div>
     </div>
   );
 };

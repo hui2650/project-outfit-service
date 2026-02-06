@@ -17,6 +17,9 @@ const SidePanel = ({
   onFile,
   onSubmit,
   loading,
+  onChangeCategory,
+  category,
+  file,
 }) => {
   const inputRef = React.useRef(null);
 
@@ -24,7 +27,7 @@ const SidePanel = ({
   const pickFile = () => inputRef.current?.click();
 
   return (
-    <div className="relative flex flex-col justify-between h-full shrink-0 shadow-lg">
+    <div className="relative flex flex-col justify-between h-full shrink-0 shadow-lg max-w-sm z-10">
       <div className="p-5 bg-white shrink-0 border-b ">
         <div className="flex itmes-center gap-2">
           <FontAwesomeIcon
@@ -56,10 +59,22 @@ const SidePanel = ({
         >
           이미지 선택
         </button>
-        <CategoryChoice />
+        <CategoryChoice
+          category={category}
+          onChangeCategory={onChangeCategory}
+        />
         <TextQueryBox textQuery={textQuery} onTextQuery={onTextQuery} />
 
-        <SubmitButton loading={loading} onSubmit={onSubmit} />
+        <SubmitButton
+          loading={loading}
+          onSubmit={onSubmit}
+          isReadyToSubmit={!!file && !!category} //!!file: 파일이 존재하면 true, 선택된 카테고리가 있다면 true 둘 다 있어야 버튼이 활성화됨
+        />
+      </div>
+
+      <div className="p-6 w-full bg-white shrink-0 border-t ">
+        <h2 className="text-sm">게스트 사용자</h2>
+        <span className="text-xs">로그인하여 저장하기</span>
       </div>
 
       <div className="p-6 w-full bg-white shrink-0 border-t ">
