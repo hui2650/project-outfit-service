@@ -26,7 +26,7 @@ const ResultStage = ({ loading, chatLogs }) => {
 
   return (
     <div
-      className="h-full overflow-y-auto px-4"
+      className="h-full max-w-7xl overflow-y-auto px-4 [scrollbar-width:none] [-ms-overflow-style:none]"
       style={{ scrollbarGutter: "stable" }}
     >
       {chatLogs.length === 0 && (
