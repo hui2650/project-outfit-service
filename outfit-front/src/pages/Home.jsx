@@ -20,6 +20,7 @@ const Home = () => {
   const [requestId, setRequestId] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState(null);
+  const [category, setCategory] = React.useState(null);
 
   // 파일 선택/드랍 처리
   const handleFile = (f) => {
@@ -62,7 +63,7 @@ const Home = () => {
 
   // 서버 요청
   const handleSubmit = async () => {
-    console.log("SUBMIT", { hasFile: !!file, textQuery });
+    console.log("SUBMIT", { hasFile: !!file, textQuery, category });
     // (0) 파일이 없으면 업로드 요청 자체를 막음 (프론트 1차 검증)
     //     -> 백엔드 보내봤자 400/에러이므로, 사용자에게 바로 안내하는 UX
     if (!file) {
@@ -96,7 +97,7 @@ const Home = () => {
     try {
       // (3) 실제 API 호출: Spring으로 multipart 전송(이미지 + limit)
       //     -> await이므로 응답 받을 때까지 이 함수는 여기서 잠시 멈춤
-      const resp = await recommendByImage(file, 8, textQuery);
+      const resp = await recommendByImage(file, 8, textQuery, category);
 
       // (4) 응답이 "에러 형태"로 내려온 경우(서버가 JSON으로 에러를 통일해서 준다는 가정)
       //     -> items 렌더 대신 에러 메시지를 렌더하게 됨
@@ -133,6 +134,11 @@ const Home = () => {
       setRequestId(receivedRequestId);
       // (6) resp.items
       setItems(receivedItems);
+
+      // 파일, 이미지, 카테고리 초기화
+      setFile(null);
+      setPreviewUrl(null);
+      setCategory(null);
     } catch (e) {
       // (7) fetch 자체 실패(네트워크 끊김, CORS, 서버 다운 등)
       //     -> 서버가 에러 JSON을 준 게 아니라 "요청이 성립하지 않은" 상황
@@ -166,7 +172,9 @@ const Home = () => {
             previewUrl={previewUrl}
             textQuery={textQuery}
             onTextQuery={setTextQuery}
+            onChangeCategory={setCategory}
             onFile={handleFile}
+            category={category}
             onSubmit={handleSubmit}
             loading={loading}
             error={error}
