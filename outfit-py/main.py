@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import io, os, asyncio
+import io, os, asyncio, time, hashlib
 from typing import Dict, Any, Optional, List, Tuple
 from pathlib import Path
 from collections import defaultdict
@@ -26,27 +26,51 @@ MODEL_NAME = "openai/clip-vit-base-patch32"
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
 
-# ✅ 전신 필터
+# ✅ Kakao(Daum) Image Search (K-fashion domain boost)
+KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY", "")
+SEARCH_SOURCES = [s.strip().lower() for s in os.getenv("SEARCH_SOURCES", "naver,kakao").split(",") if s.strip()]
+
+# ✅ full-body gates
 PORTRAIT_AR_MIN = 1.02
 BBOX_FEET_Y_MIN = 0.86
 
-# ✅ 아이템 존재 gate (region crop에서 target vs distractor)
+# ✅ quality
+MIN_SHORT_SIDE = 480
+
+# ✅ item presence gate
 ITEM_REGION_MIN_PROB = 0.20
 ITEM_REGION_MARGIN_MIN = 0.02
+ITEM_VS_PRODUCT_MIN = 0.025  # wearing vs product min margin
 
-# ✅ 색상 (정확 우선)
+# ✅ color strictness
 COLOR_STRICT_DEFAULT = True
-COLOR_FALLBACK_COMPAT = False
+COLOR_STRICT_IF_CONF_GE = 0.45
+COLOR_FALLBACK_COMPAT = True
 
-# ✅ POSE gate: 너무 빡세면 0개가 되므로 "soft" 기본
-POSE_GATE_STRICT = False      # True면 pose fail은 무조건 drop
-POSE_GATE_PENALTY = 0.10      # soft일 때 pose fail이면 score에서 패널티
+# ✅ pose gate (soft by default)
+POSE_GATE_STRICT = False
+POSE_GATE_PENALTY = 0.10
 
-# ✅ screenshot/product gate margin: 너무 빡세면 0개가 되므로 완만하게
-OUTFIT_BAD_MARGIN = 0.00      # outfit_score > bad_score + margin
+# ✅ screenshot/product gate
+OUTFIT_BAD_MARGIN = 0.00
+OUTFIT_ABS_MIN = 0.52
 
 MAX_CONCURRENCY = 6
 FINAL_LIMIT_DEFAULT = 8
+
+# ✅ scoring stabilization
+MARGIN_GOOD = 0.08
+PENALTY_LOW_MARGIN = 0.08
+PENALTY_LOW_TBEST = 0.06
+
+# ⚠️ IMPORTANT: shape score easily biases footwear toward sneakers in lookbooks.
+# Keep it, but DISABLE for footwear by default.
+SHAPE_MIN = 0.18
+SHAPE_WEIGHT = 0.08
+
+# ✅ cache by image bytes (Swagger file-sticky mitigation)
+CACHE_TTL_SEC = 180
+_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 
 # ================= APP =================
 app = FastAPI(title="Styling Recommend API")
@@ -59,6 +83,8 @@ async def all_exception_handler(request: Request, exc: Exception):
 
 # ================= MODELS =================
 device = "cuda" if torch.cuda.is_available() else "cpu"
+print("[BOOT] device =", device)
+
 clip_model = CLIPModel.from_pretrained(MODEL_NAME).to(device).eval()
 clip_processor = CLIPProcessor.from_pretrained(MODEL_NAME)
 
@@ -103,12 +129,11 @@ def center_square_crop(img: Image.Image, ratio: float = 0.85) -> Image.Image:
     y2 = y1 + side
     return safe_crop(img, x1, y1, x2, y2)
 
-def normalize_label(s: str) -> str:
-    s = (s or "").strip().lower()
-    s = s.replace("a photo of ", "").strip()
-    if s.startswith("a "): s = s[2:].strip()
-    if s.startswith("an "): s = s[3:].strip()
-    return s
+def short_side(img: Image.Image) -> int:
+    return min(img.size[0], img.size[1])
+
+def sha256_bytes(b: bytes) -> str:
+    return hashlib.sha256(b).hexdigest()
 
 
 # ================= CLIP =================
@@ -122,6 +147,9 @@ def clip_scores(img: Image.Image, prompts: List[str]) -> List[float]:
 
 @torch.no_grad()
 def get_img_features(img: Image.Image) -> torch.Tensor:
+    """
+    Safe image feature extraction (avoids BaseModelOutputWithPooling norm issues)
+    """
     inp = clip_processor(images=img, return_tensors="pt")
     pixel_values = inp["pixel_values"].to(device)
 
@@ -141,7 +169,6 @@ def get_img_features(img: Image.Image) -> torch.Tensor:
 
 
 # ================= COLOR (rembg + LAB) =================
-COLOR_LABELS = ["black", "white", "gray", "beige", "brown", "navy"]
 COLOR_KOR = {
     "beige": "베이지",
     "black": "검정",
@@ -156,7 +183,6 @@ def rgb_to_lab_image(img_rgb: Image.Image) -> np.ndarray:
     return np.asarray(lab, dtype=np.float32)
 
 def lab_prototypes() -> Dict[str, np.ndarray]:
-    # ✅ beige/white 경계용 프로토타입
     proto_rgb = {
         "black": (15, 15, 15),
         "white": (245, 245, 245),
@@ -184,9 +210,6 @@ def rembg_alpha(img_rgb: Image.Image) -> np.ndarray:
     return alpha
 
 def dominant_color_label_rembg_lab(img_rgb: Image.Image) -> Tuple[str, float]:
-    """
-    ✅ (한국어) rembg로 배경 제거 후 LAB 중앙값 → 프로토타입 거리로 색 결정
-    """
     a = rembg_alpha(img_rgb)
     lab = rgb_to_lab_image(img_rgb)
 
@@ -221,33 +244,48 @@ def color_compatible(user_color: str, cand_color: str) -> bool:
         return c in {"navy", "black", "gray", "white"}
     return False
 
+def robust_color_from_crops(crops: List[Image.Image]) -> Tuple[str, float]:
+    votes = defaultdict(float)
+    for c in crops[:6]:
+        try:
+            lab, cf = dominant_color_label_rembg_lab(c)
+            votes[lab] += float(cf)
+        except Exception:
+            continue
+    if not votes:
+        return ("", 0.0)
+    best = max(votes.items(), key=lambda kv: kv[1])[0]
+    conf = float(clamp(votes[best] / max(1.0, sum(votes.values())), 0.0, 1.0))
+    return best, conf
+
 
 # ================= YOLO PERSON + POSE FULLBODY =================
-def yolo_best_person_bbox(img: Image.Image) -> Tuple[Optional[Tuple[float,float,float,float]], int]:
-# ================= BODY CHECK =================
-def bbox_fullbody_and_feet(img: Image.Image) -> Tuple[bool, Dict]:
-    w, h = img.size
+def yolo_best_person_bbox(img: Image.Image) -> Tuple[Optional[Tuple[float, float, float, float]], int]:
     r = yolo_person.predict(img, verbose=False)[0]
     if r.boxes is None or len(r.boxes) == 0:
         return None, 0
+
     boxes = r.boxes.xyxy.cpu().numpy()
     cls = r.boxes.cls.cpu().numpy()
+
     persons = [i for i, c in enumerate(cls) if int(c) == 0]
     if not persons:
         return None, 0
-    i = max(persons, key=lambda k: (boxes[k][2]-boxes[k][0])*(boxes[k][3]-boxes[k][1]))
-    x1, y1, x2, y2 = boxes[i]
+
+    best_i = max(persons, key=lambda k: (boxes[k][2] - boxes[k][0]) * (boxes[k][3] - boxes[k][1]))
+    x1, y1, x2, y2 = boxes[best_i]
     return (float(x1), float(y1), float(x2), float(y2)), len(persons)
 
-def bbox_fullbody_and_feet(img: Image.Image) -> Tuple[bool, Dict]:
+def bbox_fullbody_and_feet(img: Image.Image) -> Tuple[bool, Dict[str, Any]]:
     w, h = img.size
     bbox, person_count = yolo_best_person_bbox(img)
     if bbox is None:
         return False, {"person_count": 0}
+
     x1, y1, x2, y2 = bbox
-    person_h = (y2 - y1) / h
-    top_ratio = y1 / h
-    bottom_ratio = y2 / h
+    person_h = (y2 - y1) / max(1, h)
+    top_ratio = y1 / max(1, h)
+    bottom_ratio = y2 / max(1, h)
 
     full_ok = person_h >= 0.70
     feet_ok = bottom_ratio >= BBOX_FEET_Y_MIN
@@ -269,17 +307,13 @@ def bbox_fullbody_and_feet(img: Image.Image) -> Tuple[bool, Dict]:
     }
 
 def pose_fullbody_gate(img: Image.Image) -> Tuple[bool, Dict[str, Any]]:
-    """
-    ✅ (한국어) pose로 "머리+발"이 보이는지 체크
-    - pose 모델은 실패하는 경우가 있어서 기본은 soft gate로 사용
-    """
     w, h = img.size
     r = yolo_pose.predict(img, verbose=False)[0]
     if r.keypoints is None or len(r.keypoints) == 0:
         return False, {"pose": "no_keypoints"}
 
-    xy = r.keypoints.xy.cpu().numpy()     # [n,k,2]
-    conf = r.keypoints.conf.cpu().numpy() # [n,k]
+    xy = r.keypoints.xy.cpu().numpy()
+    conf = r.keypoints.conf.cpu().numpy()
     n = xy.shape[0]
 
     def area_of(i: int) -> float:
@@ -294,7 +328,6 @@ def pose_fullbody_gate(img: Image.Image) -> Tuple[bool, Dict[str, Any]]:
     pts = xy[best_i]
     cfs = conf[best_i]
 
-    # COCO: nose=0, left_ankle=15, right_ankle=16
     if cfs[0] <= 0.20:
         return False, {"pose": "nose_missing"}
     la_ok = cfs[15] > 0.20
@@ -303,10 +336,7 @@ def pose_fullbody_gate(img: Image.Image) -> Tuple[bool, Dict[str, Any]]:
         return False, {"pose": "ankle_missing"}
 
     nose_y = float(pts[0,1] / max(1, h))
-    if la_ok and ra_ok:
-        ankle_y = float(max(pts[15,1], pts[16,1]) / max(1, h))
-    else:
-        ankle_y = float((pts[15,1] if la_ok else pts[16,1]) / max(1, h))
+    ankle_y = float((max(pts[15,1], pts[16,1]) if (la_ok and ra_ok) else (pts[15,1] if la_ok else pts[16,1])) / max(1, h))
 
     head_ok = nose_y <= 0.22
     feet_ok = ankle_y >= 0.90
@@ -315,10 +345,6 @@ def pose_fullbody_gate(img: Image.Image) -> Tuple[bool, Dict[str, Any]]:
     return ok, {"nose_y": round(nose_y,4), "ankle_y": round(ankle_y,4), "head_ok": int(head_ok), "feet_ok": int(feet_ok)}
 
 def crop_region_by_part(person_crop: Image.Image, part: str) -> Image.Image:
-    """
-    ✅ (한국어) item이 존재할 가능성이 높은 부위를 crop
-    part: head / upper / lower / feet / hands / torso
-    """
     w, h = person_crop.size
     part = part or "torso"
 
@@ -334,77 +360,161 @@ def crop_region_by_part(person_crop: Image.Image, part: str) -> Image.Image:
         return safe_crop(person_crop, 0, h*0.25, w, h*0.85)
     return safe_crop(person_crop, 0, h*0.12, w, h*0.85)
 
+def multi_crops_for_part(person_crop: Image.Image, part: str) -> List[Image.Image]:
+    w, h = person_crop.size
+    crops: List[Image.Image] = []
+    crops.append(crop_region_by_part(person_crop, part))
 
-# ================= TAXONOMY (ANY ITEM 지원 핵심) =================
+    if part == "feet":
+        crops.append(safe_crop(person_crop, 0, h*0.62, w, h*1.00))
+        crops.append(safe_crop(person_crop, w*0.08, h*0.65, w*0.92, h*1.00))
+        crops.append(safe_crop(person_crop, w*0.15, h*0.68, w*0.85, h*1.00))
+    elif part == "hands":
+        crops.append(safe_crop(person_crop, 0, h*0.18, w, h*0.95))
+        crops.append(safe_crop(person_crop, w*0.05, h*0.15, w*0.95, h*0.92))
+        crops.append(safe_crop(person_crop, w*0.12, h*0.20, w*0.88, h*0.92))
+    elif part == "upper":
+        crops.append(safe_crop(person_crop, 0, h*0.06, w, h*0.65))
+        crops.append(safe_crop(person_crop, w*0.06, h*0.10, w*0.94, h*0.62))
+        crops.append(safe_crop(person_crop, w*0.12, h*0.12, w*0.88, h*0.60))
+    elif part == "lower":
+        crops.append(safe_crop(person_crop, 0, h*0.38, w, h*1.00))
+        crops.append(safe_crop(person_crop, w*0.06, h*0.45, w*0.94, h*0.98))
+        crops.append(safe_crop(person_crop, w*0.12, h*0.48, w*0.88, h*0.98))
+    else:
+        crops.append(safe_crop(person_crop, 0, h*0.08, w, h*0.95))
+
+    # center fallback
+    crops.append(center_square_crop(person_crop, 0.72))
+
+    out: List[Image.Image] = []
+    for c in crops:
+        if short_side(c) >= 160:
+            out.append(c)
+    return out
+
+
+# ================= TAXONOMY =================
+OPEN_FOOTWEAR = {"sandals", "slippers", "slides", "flip flops"}
+CLOSED_FOOTWEAR = {"sneakers", "boots", "loafers", "dress shoes"}
+
 ITEM_TAXONOMY: List[Dict[str, Any]] = [
-    # shoes
-    {"en": "sneakers", "kr": ["운동화", "스니커즈"], "part": "feet", "yolo_classes": []},
-    {"en": "boots", "kr": ["부츠"], "part": "feet", "yolo_classes": []},
-    {"en": "loafers", "kr": ["로퍼"], "part": "feet", "yolo_classes": []},
-    {"en": "dress shoes", "kr": ["구두", "드레스슈즈"], "part": "feet", "yolo_classes": []},
+    # footwear
+    {"en": "sneakers",     "kr": ["운동화", "스니커즈"], "part": "feet", "yolo_classes": []},
+    {"en": "boots",        "kr": ["부츠"],             "part": "feet", "yolo_classes": []},
+    {"en": "loafers",      "kr": ["로퍼"],             "part": "feet", "yolo_classes": []},
+    {"en": "dress shoes",  "kr": ["구두", "드레스슈즈"], "part": "feet", "yolo_classes": []},
+    {"en": "sandals",      "kr": ["샌들"],             "part": "feet", "yolo_classes": []},
+    {"en": "slippers",     "kr": ["슬리퍼"],           "part": "feet", "yolo_classes": []},
+    {"en": "slides",       "kr": ["슬라이드"],         "part": "feet", "yolo_classes": []},
+    {"en": "flip flops",   "kr": ["쪼리"],             "part": "feet", "yolo_classes": []},
 
     # tops
-    {"en": "t-shirt", "kr": ["티셔츠", "반팔"], "part": "upper", "yolo_classes": []},
-    {"en": "shirt", "kr": ["셔츠"], "part": "upper", "yolo_classes": []},
-    {"en": "hoodie", "kr": ["후드", "후드티"], "part": "upper", "yolo_classes": []},
-    {"en": "knit sweater", "kr": ["니트", "스웨터"], "part": "upper", "yolo_classes": []},
+    {"en": "t-shirt",        "kr": ["티셔츠", "반팔"],     "part": "upper", "yolo_classes": []},
+    {"en": "shirt",          "kr": ["셔츠"],               "part": "upper", "yolo_classes": []},
+    {"en": "hoodie",         "kr": ["후드", "후드티"],     "part": "upper", "yolo_classes": []},
+    {"en": "knit sweater",   "kr": ["니트", "스웨터"],     "part": "upper", "yolo_classes": []},
+    {"en": "cardigan",       "kr": ["가디건"],             "part": "upper", "yolo_classes": []},
 
     # bottoms
-    {"en": "jeans", "kr": ["청바지", "데님"], "part": "lower", "yolo_classes": []},
-    {"en": "slacks", "kr": ["슬랙스"], "part": "lower", "yolo_classes": []},
-    {"en": "shorts", "kr": ["반바지"], "part": "lower", "yolo_classes": []},
-    {"en": "skirt", "kr": ["치마", "스커트"], "part": "lower", "yolo_classes": []},
+    {"en": "jeans",        "kr": ["청바지", "데님"],     "part": "lower", "yolo_classes": []},
+    {"en": "slacks",       "kr": ["슬랙스"],             "part": "lower", "yolo_classes": []},
+    {"en": "shorts",       "kr": ["반바지"],             "part": "lower", "yolo_classes": []},
+    {"en": "skirt",        "kr": ["치마", "스커트"],      "part": "lower", "yolo_classes": []},
 
-    # outerwear
-    {"en": "long coat", "kr": ["롱코트", "코트"], "part": "torso", "yolo_classes": []},
-    {"en": "trench coat", "kr": ["트렌치코트", "트렌치"], "part": "torso", "yolo_classes": []},
-    {"en": "puffer jacket", "kr": ["패딩", "푸퍼"], "part": "torso", "yolo_classes": []},
-    {"en": "blazer", "kr": ["블레이저", "자켓"], "part": "upper", "yolo_classes": []},
+    # outer
+    {"en": "long coat",      "kr": ["롱코트", "코트"],       "part": "torso", "yolo_classes": []},
+    {"en": "trench coat",    "kr": ["트렌치코트", "트렌치"], "part": "torso", "yolo_classes": []},
+    {"en": "puffer jacket",  "kr": ["패딩", "푸퍼"],         "part": "torso", "yolo_classes": []},
+    {"en": "blazer",         "kr": ["블레이저", "자켓"],     "part": "upper", "yolo_classes": []},
 
     # bags
-    {"en": "backpack", "kr": ["백팩", "배낭"], "part": "hands", "yolo_classes": ["backpack"]},
-    {"en": "handbag", "kr": ["핸드백", "숄더백", "토트백"], "part": "hands", "yolo_classes": ["handbag"]},
-    {"en": "crossbody bag", "kr": ["크로스백"], "part": "hands", "yolo_classes": []},
+    {"en": "backpack",      "kr": ["백팩", "배낭"],              "part": "hands", "yolo_classes": ["backpack"]},
+    {"en": "handbag",       "kr": ["핸드백", "숄더백", "토트백"],  "part": "hands", "yolo_classes": ["handbag"]},
+    {"en": "crossbody bag", "kr": ["크로스백"],                 "part": "hands", "yolo_classes": []},
 
-    # accessories
-    {"en": "hat", "kr": ["모자", "캡"], "part": "head", "yolo_classes": []},
-    {"en": "sunglasses", "kr": ["선글라스"], "part": "head", "yolo_classes": []},
-    {"en": "tie", "kr": ["넥타이"], "part": "upper", "yolo_classes": ["tie"]},
-    {"en": "umbrella", "kr": ["우산"], "part": "hands", "yolo_classes": ["umbrella"]},
-    {"en": "watch", "kr": ["시계"], "part": "hands", "yolo_classes": []},
+    # head/accessories
+    {"en": "hat",         "kr": ["모자", "캡"],         "part": "head",  "yolo_classes": []},
+    {"en": "sunglasses",  "kr": ["선글라스"],           "part": "head",  "yolo_classes": []},
+    {"en": "tie",         "kr": ["넥타이"],             "part": "upper", "yolo_classes": ["tie"]},
+    {"en": "umbrella",    "kr": ["우산"],               "part": "hands", "yolo_classes": ["umbrella"]},
+    {"en": "watch",       "kr": ["시계"],               "part": "hands", "yolo_classes": []},
 ]
 
-def taxonomy_prompts() -> List[str]:
-    return [f"a photo of {x['en']}" for x in ITEM_TAXONOMY]
+def taxonomy_prompts_with_map() -> Tuple[List[str], List[int]]:
+    """
+    Feet items get multiple prompts to reduce 'formal outfit => dress shoes' bias.
+    """
+    prompts: List[str] = []
+    idx_map: List[int] = []
+
+    for i, x in enumerate(ITEM_TAXONOMY):
+        en = x["en"]
+        if x.get("part") == "feet":
+            prompts.append(f"a photo of feet wearing {en}")
+            idx_map.append(i)
+            prompts.append(f"feet wearing {en}, open toe visible" if en in OPEN_FOOTWEAR else f"a person wearing {en}")
+            idx_map.append(i)
+        else:
+            prompts.append(f"a photo of {en}")
+            idx_map.append(i)
+
+    return prompts, idx_map
 
 def taxonomy_best(user_crop: Image.Image) -> Tuple[Dict[str, Any], float]:
-    prompts = taxonomy_prompts()
+    prompts, idx_map = taxonomy_prompts_with_map()
     scores = clip_scores(user_crop, prompts)
-    idx = int(torch.tensor(scores).argmax())
-    best_item = ITEM_TAXONOMY[idx]
-    best_prob = float(scores[idx])
+    best_prompt_idx = int(torch.tensor(scores).argmax())
+    item_idx = idx_map[best_prompt_idx]
+    best_item = ITEM_TAXONOMY[item_idx]
+    best_prob = float(scores[best_prompt_idx])
     return best_item, best_prob
 
 
-# ================= NAVER IMAGE =================
+# ================= SHAPE / SILHOUETTE =================
+def shape_prompts_for_item(item_en: str) -> List[str]:
+    item_en = (item_en or "").lower().strip()
+    if item_en in ("long coat", "trench coat", "puffer jacket", "blazer"):
+        return [
+            "a long coat outfit photo", "a short coat outfit photo",
+            "a trench coat outfit photo", "a blazer outfit photo",
+            "a puffer jacket outfit photo",
+            "an oversized fit outfit", "a slim fit outfit",
+        ]
+    if item_en in ("jeans", "slacks", "shorts", "skirt"):
+        return [
+            "wide fit pants outfit", "straight fit pants outfit", "skinny fit pants outfit",
+            "slacks outfit", "jeans outfit",
+        ]
+    if item_en in CLOSED_FOOTWEAR or item_en in OPEN_FOOTWEAR:
+        # Footwear shape prompt tends to bias to sneakers; keep minimal
+        return ["footwear outfit photo", "casual outfit", "formal outfit"]
+    return ["a full body street fashion outfit", "a casual outfit", "a formal outfit"]
+
+def shape_score(person_crop: Image.Image, item_en: str) -> Tuple[float, str]:
+    sp = shape_prompts_for_item(item_en)
+    ss = clip_scores(person_crop, sp)
+    best_i = int(torch.tensor(ss).argmax())
+    best = float(ss[best_i])
+    label = sp[best_i]
+    return best, label
+
+
+# ================= SEARCH =================
+def korea_style_keywords() -> str:
+    return "무신사 스냅 코디북 룩북 전신 착샷 스트릿 데일리 OOTD"
+
+def build_negative_keywords(item_en: str, item_part: str) -> str:
+    base = "-쇼핑 -가격 -구매 -판매 -광고 -쿠폰 -스토어 -공식 -상품 -리뷰 -택배 -문의 -재고 -뉴스 -기사 -연예 -화보"
+    # For open footwear, sneakers noise is extremely common
+    if item_part == "feet" and item_en in OPEN_FOOTWEAR:
+        base += " -스니커즈 -운동화 -러닝화 -런닝화 -나이키 -아디다스 -뉴발란스 -조던"
+    return base
+
 async def naver_search_once(query: str, display: int = 80, start: int = 1) -> List[Dict[str, Any]]:
-    """
-    ✅ (한국어) Naver image search 1회
-    - sort=sim: 유사도 우선
-    - filter=large: 가능하면 큰 이미지 선호 (품질/전신 확률↑)
-    """
     url = "https://openapi.naver.com/v1/search/image"
-    headers = {
-        "X-Naver-Client-Id": NAVER_CLIENT_ID,
-        "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
-    }
-    params = {
-        "query": query,
-        "display": display,
-        "start": start,
-        "sort": "sim",
-        "filter": "large",
-    }
+    headers = {"X-Naver-Client-Id": NAVER_CLIENT_ID, "X-Naver-Client-Secret": NAVER_CLIENT_SECRET}
+    params = {"query": query, "display": min(int(display), 100), "start": max(1, int(start)), "sort": "sim", "filter": "large"}
 
     async with httpx.AsyncClient(timeout=20) as c:
         r = await c.get(url, headers=headers, params=params)
@@ -413,7 +523,43 @@ async def naver_search_once(query: str, display: int = 80, start: int = 1) -> Li
             print("[NAVER ERR]", r.text[:300])
             return []
         data = r.json()
-        return data.get("items", []) or []
+        items = data.get("items", []) or []
+        out = []
+        for it in items:
+            out.append({
+                "link": it.get("link"),
+                "originallink": it.get("originallink") or it.get("link"),
+                "thumbnail": it.get("thumbnail") or it.get("link"),
+                "title": it.get("title") or "",
+                "source": "naver",
+            })
+        return out
+
+async def kakao_search_once(query: str, size: int = 80, page: int = 1) -> List[Dict[str, Any]]:
+    if not KAKAO_REST_API_KEY:
+        return []
+    url = "https://dapi.kakao.com/v2/search/image"
+    headers = {"Authorization": f"KakaoAK {KAKAO_REST_API_KEY}"}
+    params = {"query": query, "size": min(int(size), 80), "page": max(1, int(page)), "sort": "accuracy"}
+
+    async with httpx.AsyncClient(timeout=20) as c:
+        r = await c.get(url, headers=headers, params=params)
+        print("[KAKAO]", r.status_code, "| query =", query)
+        if r.status_code != 200:
+            print("[KAKAO ERR]", r.text[:300])
+            return []
+        data = r.json()
+        docs = data.get("documents", []) or []
+        out = []
+        for d in docs:
+            out.append({
+                "link": d.get("image_url"),
+                "originallink": d.get("doc_url") or d.get("image_url"),
+                "thumbnail": d.get("thumbnail_url") or d.get("image_url"),
+                "title": d.get("display_sitename") or "",
+                "source": "kakao",
+            })
+        return out
 
 def merge_dedupe(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     seen = set()
@@ -426,16 +572,23 @@ def merge_dedupe(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         seen.add(link)
     return out
 
-async def naver_search_multi(queries: List[str], display_each: int = 80) -> List[Dict[str, Any]]:
-    """
-    ✅ (한국어) query 여러 개를 호출해서 합치기
-    - rawCount=0 문제를 줄이는 핵심
-    """
+async def search_multi(queries: List[str], display_each: int = 80) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     all_items: List[Dict[str, Any]] = []
+    per_source = defaultdict(int)
+
     for q in queries:
-        items1 = await naver_search_once(q, display=display_each, start=1)
-        all_items.extend(items1)
-    return merge_dedupe(all_items)
+        if "naver" in SEARCH_SOURCES:
+            ni = await naver_search_once(q, display=display_each, start=1)
+            per_source["naver"] += len(ni)
+            all_items.extend(ni)
+
+        if "kakao" in SEARCH_SOURCES:
+            ki = await kakao_search_once(q, size=min(display_each, 80), page=1)
+            per_source["kakao"] += len(ki)
+            all_items.extend(ki)
+
+    merged = merge_dedupe(all_items)
+    return merged, dict(per_source)
 
 
 # ================= OPTIONAL YOLO OBJECT GATE =================
@@ -452,6 +605,97 @@ def yolo_has_any(img: Image.Image, wanted_names: List[str]) -> bool:
     return any(w in present for w in wanted_names)
 
 
+# ================= PRESENCE PROMPTS =================
+def choose_distractors(item_en: str, item_part: str) -> List[str]:
+    item_en = (item_en or "").lower().strip()
+    if "bag" in item_en or item_en in ("backpack", "handbag", "crossbody bag"):
+        return ["handbag", "backpack", "tote bag", "crossbody bag", "suitcase"]
+
+    if item_part == "feet":
+        # ✅ crucial: open vs closed separation
+        if item_en in OPEN_FOOTWEAR:
+            return ["sneakers", "boots", "loafers", "dress shoes"]
+        if item_en in CLOSED_FOOTWEAR:
+            return ["sandals", "slippers", "slides", "flip flops"]
+        return ["sneakers", "sandals", "boots", "loafers"]
+
+    if item_part == "upper":
+        return ["t-shirt", "shirt", "hoodie", "knit sweater", "jacket"]
+    if item_part == "lower":
+        return ["jeans", "slacks", "shorts", "skirt"]
+    if item_part == "head":
+        return ["hat", "sunglasses", "cap"]
+    return ["clothing", "fashion item", "outfit", "product photo"]
+
+def presence_prompts_strong(item_en: str, distractors: List[str]) -> List[str]:
+    """
+    Stronger separation:
+    - wearing vs product
+    - open footwear vs sneakers
+    """
+    item_en = (item_en or "").strip().lower()
+
+    if item_en in OPEN_FOOTWEAR:
+        targets = [
+            f"feet wearing {item_en} open toe visible",
+            f"a person wearing {item_en} open toe footwear",
+            f"summer street style outfit wearing {item_en}",
+            f"casual outfit with {item_en} on feet",
+        ]
+    else:
+        targets = [
+            f"a full body street fashion photo wearing {item_en}",
+            f"a person wearing {item_en} in an outfit photo",
+            f"street style outfit with {item_en}",
+            f"{item_en} worn by a person in a full body outfit photo",
+        ]
+
+    product = [
+        f"a product photo of {item_en}",
+        f"a close-up product shot of {item_en}",
+    ]
+
+    dist = [f"a full body street fashion photo wearing {d}" for d in distractors[:4]]
+    return targets + product + dist
+
+
+# ================= FOOTWEAR TYPE GATE (fix sneakers leaking into slippers) =================
+@torch.no_grad()
+def footwear_type_gate(foot_crop: Image.Image) -> Dict[str, float]:
+    prompts = [
+        # open-toe
+        "open toe footwear",
+        "visible toes",
+        "sandals on feet",
+        "slippers on feet",
+        "slides on feet",
+        "flip flops on feet",
+        # closed
+        "sneakers on feet",
+        "running shoes on feet",
+        "boots on feet",
+        "loafers on feet",
+        "dress shoes on feet",
+    ]
+    s = clip_scores(foot_crop, prompts)
+    keys = ["open", "toes", "sandals", "slippers", "slides", "flipflops",
+            "sneakers", "running", "boots", "loafers", "dress"]
+    return {k: float(v) for k, v in zip(keys, s)}
+
+def open_footwear_ok(foot_crop: Image.Image) -> Tuple[bool, Dict[str, float]]:
+    sc = footwear_type_gate(foot_crop)
+    open_best = max(sc["open"], sc["toes"], sc["sandals"], sc["slippers"], sc["slides"], sc["flipflops"])
+    closed_best = max(sc["sneakers"], sc["running"], sc["boots"], sc["loafers"], sc["dress"])
+    # ✅ Thresholds tuned to avoid over-dropping; only drop if clearly not open-toe
+    ok = (open_best >= 0.18) and (open_best > closed_best + 0.02)
+    meta = {
+        "open_best": round(open_best, 4),
+        "closed_best": round(closed_best, 4),
+        "gap": round(open_best - closed_best, 4),
+    }
+    return ok, meta
+
+
 # ================= MAIN =================
 @app.post("/recommend/image")
 async def recommend_image(
@@ -464,26 +708,37 @@ async def recommend_image(
     print("[REQ] requestId=", requestId, "textQuery=", textQuery, "limit=", limit)
     print("[REQ] filename=", image.filename, "content_type=", image.content_type)
 
-    if not NAVER_CLIENT_ID:
+    if not NAVER_CLIENT_ID and "naver" in SEARCH_SOURCES:
         return {"error": "NAVER_CLIENT_ID 없음"}
-    if not NAVER_CLIENT_SECRET:
+    if not NAVER_CLIENT_SECRET and "naver" in SEARCH_SOURCES:
         return {"error": "NAVER_CLIENT_SECRET 없음"}
+    if "kakao" in SEARCH_SOURCES and not KAKAO_REST_API_KEY:
+        print("[WARN] SEARCH_SOURCES includes kakao but KAKAO_REST_API_KEY is missing -> kakao returns empty")
     if not REMBG_OK:
         return {"error": "rembg 미설치/로드 실패 (pip install rembg onnxruntime 필요)"}
 
-    user_img = pil_rgb(await image.read())
+    img_bytes = await image.read()
+    cache_key = sha256_bytes(img_bytes) + f":{(textQuery or '').strip()}:{limit}"
+    now = time.time()
+
+    if cache_key in _CACHE:
+        ts, payload = _CACHE[cache_key]
+        if now - ts <= CACHE_TTL_SEC:
+            payload["debug"]["cache"] = {"hit": True, "ttl_sec": CACHE_TTL_SEC}
+            return payload
+        else:
+            _CACHE.pop(cache_key, None)
+
+    user_img = pil_rgb(img_bytes)
     user_q = (textQuery or "").strip()
 
-    # ✅ drop counters
     drop_counts = defaultdict(int)
     drop_lock = asyncio.Lock()
     async def drop(reason: str):
         async with drop_lock:
             drop_counts[reason] += 1
 
-    # =========================================================
-    # 0) user_mode 판단
-    # =========================================================
+    # 0) user mode
     user_person_bbox, user_person_count = yolo_best_person_bbox(user_img)
     if user_person_bbox is not None and user_person_count >= 1:
         user_person_crop = safe_crop(user_img, *user_person_bbox)
@@ -494,51 +749,50 @@ async def recommend_image(
         user_base_for_clip = center_square_crop(user_img, 0.85)
         user_mode = "item_only"
 
-    # =========================================================
-    # 1) ANY-ITEM 분류
-    # =========================================================
+    # 1) taxonomy
     best_item, best_prob = taxonomy_best(user_base_for_clip)
-
     item_en = best_item["en"]
     item_kr_list = best_item["kr"]
     item_part = best_item["part"]
     yolo_gate_classes = best_item.get("yolo_classes", [])
 
-    # =========================================================
-    # 2) 사용자 아이템 crop(색/특징)
-    # =========================================================
+    # 2) user item crops/features
     if user_person_crop is not None:
-        user_item_crop = crop_region_by_part(user_person_crop, item_part)
+        user_item_crops = multi_crops_for_part(user_person_crop, item_part)
+        user_item_crop = user_item_crops[0]
     else:
-        user_item_crop = center_square_crop(user_img, 0.85)
+        user_item_crops = [center_square_crop(user_img, 0.85)]
+        user_item_crop = user_item_crops[0]
 
-    user_color, user_color_conf = dominant_color_label_rembg_lab(user_item_crop)
+    user_color, user_color_conf = robust_color_from_crops(user_item_crops)
     user_item_features = get_img_features(user_item_crop)
 
-    # =========================================================
-    # 3) 검색 쿼리 생성 (rawCount=0 방지용 다중 쿼리)
-    # =========================================================
+    # 3) queries
     color_kor = COLOR_KOR.get(user_color, "")
     item_kor = item_kr_list[0] if item_kr_list else "패션"
+    neg = build_negative_keywords(item_en=item_en, item_part=item_part)
+    ko_kw = korea_style_keywords()
 
-    # ✅ 핵심: "하나의 쿼리"에 올인하지 말고, 3~4개 쿼리로 넓히기
-    # - 1) 색+아이템+무신사스냅
-    # - 2) 색+아이템+룩북/착샷
-    # - 3) 아이템만 + 무신사스냅
-    # - 4) 아이템만 + 전신코디
-    q1 = f"{color_kor} {item_kor} 전신 착샷 코디 룩북 무신사 스냅 {user_q}".strip()
-    q2 = f"{color_kor} {item_kor} 전신 코디 착샷 룩북 {user_q}".strip()
-    q3 = f"{item_kor} 전신 착샷 코디 룩북 무신사 스냅 {user_q}".strip()
-    q4 = f"{item_kor} 전신 코디 착샷 룩북 {user_q}".strip()
+    q1 = f"{color_kor} {item_kor} {ko_kw} {user_q} {neg}".strip()
+    q2 = f"{color_kor} {item_kor} 전신 착용샷 코디 스트릿 {user_q} {neg}".strip()
+    q3 = f"{item_kor} {ko_kw} {user_q} {neg}".strip()
+    q4 = f"{item_kor} 전신 코디 착샷 룩북 {user_q} {neg}".strip()
     queries = [q1, q2, q3, q4]
 
-    naver_items = await naver_search_multi(queries, display_each=80)
+    cand_items, per_source_raw = await search_multi(queries, display_each=80)
+
+    if len(cand_items) < 70:
+        q5 = f"{item_kor} 무신사 스냅 전신 코디 {neg}".strip()
+        q6 = f"{item_kor} 코디북 전신 착샷 OOTD {neg}".strip()
+        more, more_raw = await search_multi([q5, q6], display_each=80)
+        cand_items = merge_dedupe(cand_items + more)
+        for k, v in more_raw.items():
+            per_source_raw[k] = per_source_raw.get(k, 0) + v
+        queries = queries + [q5, q6]
 
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
 
-    # =========================================================
-    # 4) 후보 처리
-    # =========================================================
+    # 4) candidate processing
     async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
 
         async def process(it: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -549,7 +803,12 @@ async def recommend_image(
                         await drop("no_url")
                         return None
 
-                    r = await client.get(url)
+                    try:
+                        r = await client.get(url)
+                    except Exception:
+                        await drop("download_fail")
+                        return None
+
                     if r.status_code != 200:
                         await drop("download_fail")
                         return None
@@ -565,13 +824,17 @@ async def recommend_image(
                         await drop("decode_fail")
                         return None
 
-                    # bbox fullbody
+                    if short_side(img) < MIN_SHORT_SIDE:
+                        await drop("too_small")
+                        return None
+
+                    # full-body bbox
                     ok_bbox, bbox = bbox_fullbody_and_feet(img)
                     if not ok_bbox:
                         await drop("bbox_fullbody_fail")
                         return None
 
-                    # pose fullbody (soft by default)
+                    # pose full-body (soft)
                     ok_pose, pose_meta = pose_fullbody_gate(img)
                     if POSE_GATE_STRICT and (not ok_pose):
                         await drop("pose_fullbody_fail")
@@ -581,13 +844,16 @@ async def recommend_image(
                     gate_prompts = [
                         "a full body street fashion outfit photo",
                         "a product photo of an item",
-                        "a screenshot of a webpage",
+                        "a close-up product shot",
+                        "a screenshot of a shopping webpage with lots of text",
+                        "a collage of product images",
                         "a news photo with text overlay",
                     ]
                     gs = clip_scores(img, gate_prompts)
                     outfit_score = float(gs[0])
-                    bad_score = float(max(gs[1], gs[2], gs[3]))
-                    if not (outfit_score > bad_score + OUTFIT_BAD_MARGIN):
+                    bad_score = float(max(gs[1:]))
+
+                    if not (outfit_score > bad_score + OUTFIT_BAD_MARGIN and outfit_score >= OUTFIT_ABS_MIN):
                         await drop("screenshot_or_product")
                         return None
 
@@ -597,61 +863,92 @@ async def recommend_image(
                         return None
                     person_crop = safe_crop(img, pb[0], pb[1], pb[2], pb[3])
 
-                    # OPTIONAL YOLO object gate
+                    # optional YOLO object gate
                     if yolo_gate_classes:
                         if not yolo_has_any(person_crop, yolo_gate_classes):
                             await drop("yolo_object_missing")
                             return None
 
-                    # item region crop
-                    cand_item_crop = crop_region_by_part(person_crop, item_part)
+                    # item presence gate (multi-crop best-of)
+                    crops = multi_crops_for_part(person_crop, item_part)
+                    distractors = choose_distractors(item_en, item_part)
+                    prompts = presence_prompts_strong(item_en, distractors)
 
-                    # item presence gate: target vs distractors
-                    distractors = []
-                    if "bag" in item_en or item_en in ("backpack", "handbag", "crossbody bag"):
-                        distractors = ["handbag", "backpack", "tote bag", "crossbody bag", "suitcase"]
-                    elif "shoe" in item_en or item_en in ("sneakers", "boots", "loafers", "dress shoes"):
-                        distractors = ["sneakers", "boots", "loafers", "dress shoes", "sandals"]
-                    elif item_part == "upper":
-                        distractors = ["t-shirt", "shirt", "hoodie", "knit sweater", "jacket"]
-                    elif item_part == "lower":
-                        distractors = ["jeans", "slacks", "shorts", "skirt"]
-                    else:
-                        distractors = ["clothing", "fashion item", "outfit"]
+                    best = None
+                    for c in crops:
+                        rs = clip_scores(c, prompts)
+                        t_best = float(max(rs[0:4]))
+                        p_best = float(max(rs[4:6]))
+                        margin_vs_product = float(t_best - p_best)
+                        srt = sorted(rs, reverse=True)
+                        margin_12 = float(srt[0] - srt[1]) if len(srt) >= 2 else 0.0
+                        score_local = 0.75 * t_best + 0.25 * margin_vs_product
 
-                    candidates_en = [item_en] + [d for d in distractors if d != item_en][:4]
-                    prompts = [f"a photo of {x}" for x in candidates_en]
-                    rs = clip_scores(cand_item_crop, prompts)
+                        if (best is None) or (score_local > best["score_local"]):
+                            best = {
+                                "score_local": score_local,
+                                "t_best": t_best,
+                                "p_best": p_best,
+                                "margin_vs_product": margin_vs_product,
+                                "margin_12": margin_12,
+                                "crop": c,
+                            }
 
-                    region_top1 = float(max(rs))
-                    srt = sorted(rs, reverse=True)
-                    region_margin = float(srt[0] - srt[1]) if len(srt) >= 2 else 0.0
+                    if best is None:
+                        await drop("item_crop_fail")
+                        return None
 
-                    if region_top1 < ITEM_REGION_MIN_PROB:
+                    if best["t_best"] < ITEM_REGION_MIN_PROB:
                         await drop("item_region_low")
                         return None
-                    if region_margin < ITEM_REGION_MARGIN_MIN:
+                    if best["margin_12"] < ITEM_REGION_MARGIN_MIN:
                         await drop("item_region_ambiguous")
                         return None
+                    if best["margin_vs_product"] < ITEM_VS_PRODUCT_MIN:
+                        await drop("item_vs_product_ambiguous")
+                        return None
 
-                    # color strict
-                    cand_color, cand_color_conf = dominant_color_label_rembg_lab(cand_item_crop)
+                    cand_item_crop = best["crop"]
+
+                    # ✅ NEW: footwear type gate (prevents sneakers leaking into slippers)
+                    open_meta = None
+                    if item_part == "feet" and item_en in OPEN_FOOTWEAR:
+                        ok_open, open_meta = open_footwear_ok(cand_item_crop)
+                        if not ok_open:
+                            await drop("not_open_footwear")
+                            return None
+
+                    # robust color (use multiple crops)
+                    cand_color, cand_color_conf = robust_color_from_crops([cand_item_crop] + crops)
+
+                    strict_allowed = (user_color_conf >= COLOR_STRICT_IF_CONF_GE) and (cand_color_conf >= COLOR_STRICT_IF_CONF_GE)
                     strict_color_ok = (cand_color == user_color) if user_color else False
                     compat_color_ok = color_compatible(user_color, cand_color) if user_color else False
 
-                    if COLOR_STRICT_DEFAULT and not strict_color_ok:
-                        await drop("color_strict_mismatch")
-                        return None
+                    if COLOR_STRICT_DEFAULT:
+                        if strict_allowed:
+                            if not strict_color_ok:
+                                await drop("color_strict_mismatch")
+                                return None
+                        else:
+                            if COLOR_FALLBACK_COMPAT:
+                                if not (strict_color_ok or compat_color_ok):
+                                    await drop("color_compat_mismatch")
+                                    return None
+                            else:
+                                if not strict_color_ok:
+                                    await drop("color_strict_mismatch")
+                                    return None
 
-                    # visual similarity
+                    # similarity
                     cand_item_features = get_img_features(cand_item_crop)
                     visual_sim = float((user_item_features @ cand_item_features.T).item())
 
-                    # portrait score
+                    # portrait-ish score
                     ar = img.height / max(1, img.width)
                     ar_score = ar if ar >= PORTRAIT_AR_MIN else 0.90
 
-                    # style score
+                    # style score (optional)
                     style_score = 0.0
                     if user_q:
                         style_prompts = [
@@ -662,21 +959,38 @@ async def recommend_image(
                         style_scores = clip_scores(person_crop, style_prompts)
                         style_score = float(max(style_scores))
 
-                    score = (
-                        0.45 * visual_sim +
-                        0.25 * region_top1 +
-                        0.10 * style_score +
-                        0.10 * ar_score +
-                        0.10 * float(bbox.get("person_h", 0.0))
-                    )
+                    # shape score (DISABLED for footwear to avoid sneaker bias)
+                    sh_score = 0.0
+                    sh_label = ""
+                    if item_part != "feet":
+                        sh_score, sh_label = shape_score(person_crop, item_en)
+                        if sh_score < SHAPE_MIN:
+                            sh_score = 0.0
 
-                    # ✅ pose soft penalty
+                    # score stabilization
+                    m = float(best["margin_vs_product"])
+                    m_norm = clamp(m / MARGIN_GOOD, 0.0, 1.0)
+
+                    penalty = 0.0
+                    if m < 0.02:
+                        penalty += PENALTY_LOW_MARGIN
+                    if best["t_best"] < 0.22:
+                        penalty += PENALTY_LOW_TBEST
+
+                    score = (
+                        0.50 * visual_sim +
+                        0.24 * float(best["t_best"]) +
+                        0.10 * m_norm +
+                        0.08 * style_score +
+                        (SHAPE_WEIGHT * float(sh_score) if item_part != "feet" else 0.0) +
+                        0.04 * ar_score +
+                        0.04 * float(bbox.get("person_h", 0.0))
+                    ) - penalty
+
                     if not ok_pose:
                         score -= POSE_GATE_PENALTY
 
                     title = (it.get("title") or "").replace("<b>", "").replace("</b>", "")
-
-                    # ✅ (핵심) landingUrl / thumbUrl 추가
                     landing = it.get("originallink") or url
                     thumb = it.get("thumbnail") or url
 
@@ -685,7 +999,7 @@ async def recommend_image(
                         "landingUrl": landing,
                         "thumbUrl": thumb,
                         "title": title,
-                        "source": "naver",
+                        "source": it.get("source", "unknown"),
                         "score": clamp(score, 0, 2),
                         "meta": {
                             "user_mode": user_mode,
@@ -698,10 +1012,19 @@ async def recommend_image(
                             "user_color_conf": round(float(user_color_conf), 4),
                             "cand_color": cand_color,
                             "cand_color_conf": round(float(cand_color_conf), 4),
+                            "strict_allowed": int(strict_allowed),
                             "strict_color_ok": int(strict_color_ok),
                             "compat_color_ok": int(compat_color_ok),
-                            "region_top1": round(region_top1, 4),
-                            "region_margin": round(region_margin, 4),
+                            "presence": {
+                                "t_best": round(float(best["t_best"]), 4),
+                                "p_best": round(float(best["p_best"]), 4),
+                                "margin_vs_product": round(float(best["margin_vs_product"]), 4),
+                                "margin_12": round(float(best["margin_12"]), 4),
+                                "m_norm": round(float(m_norm), 4),
+                                "penalty": round(float(penalty), 4),
+                            },
+                            "open_footwear_gate": open_meta,
+                            "shape": {"score": round(float(sh_score), 4), "best_label": sh_label},
                             "visual_sim": round(visual_sim, 4),
                             "bbox": bbox,
                             "pose": pose_meta,
@@ -713,7 +1036,7 @@ async def recommend_image(
                     await drop("process_exception")
                     return None
 
-        processed = await asyncio.gather(*[process(it) for it in naver_items])
+        processed = await asyncio.gather(*[process(it) for it in cand_items])
 
     items = [x for x in processed if x]
     items.sort(key=lambda x: x["score"], reverse=True)
@@ -722,15 +1045,16 @@ async def recommend_image(
     for idx, it in enumerate(final, start=1):
         it["rank"] = idx
 
-    # ✅ drop_counts가 비어있는 경우는 "naver_items가 비었음"일 가능성이 큼
-    return {
+    payload = {
         "requestId": requestId,
         "items": final,
         "debug": {
+            "cache": {"hit": False, "ttl_sec": CACHE_TTL_SEC},
+            "sources": {"enabled": SEARCH_SOURCES, "raw_per_source": per_source_raw},
             "detected": {
                 "user_mode": user_mode,
                 "item_en": item_en,
-                "item_kr": item_kor,
+                "item_kr": (item_kr_list[0] if item_kr_list else ""),
                 "item_prob": round(best_prob, 4),
                 "user_color": user_color,
                 "user_color_conf": round(float(user_color_conf), 4),
@@ -739,13 +1063,23 @@ async def recommend_image(
                 "part": item_part,
                 "pose_gate_strict": POSE_GATE_STRICT,
                 "outfit_bad_margin": OUTFIT_BAD_MARGIN,
+                "outfit_abs_min": OUTFIT_ABS_MIN,
+                "min_short_side": MIN_SHORT_SIDE,
+                "item_vs_product_min": ITEM_VS_PRODUCT_MIN,
+                "color_strict_if_conf_ge": COLOR_STRICT_IF_CONF_GE,
+                "shape_min": SHAPE_MIN,
+                "shape_weight": SHAPE_WEIGHT,
+                "footwear_gate_enabled": (item_part == "feet" and item_en in OPEN_FOOTWEAR),
             },
-            "rawCount": len(naver_items),
+            "rawCount": len(cand_items),
             "passCount": len(items),
             "finalCount": len(final),
             "drop_counts": dict(sorted(drop_counts.items(), key=lambda kv: kv[1], reverse=True)),
         }
     }
 
-# 실행:
+    _CACHE[cache_key] = (now, payload)
+    return payload
+
+# run:
 # python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000 --log-level debug
