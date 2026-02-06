@@ -20,7 +20,7 @@ const ResultModal = ({ item, onClose }) => {
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 z-[1000]">
       {/* 어두운 배경 (클릭하면 닫힘) */}
       <div
         className="absolute inset-0 bg-black/60"

@@ -1,7 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{js,jsx,ts,tsx}"],
-  safelist: ["bg-primary-dis", "text-primary-foreground"],
+  safelist: ["bg-primary-dis", "text-primary-foreground", "animate-emojiFall"],
   theme: {
     extend: {
       colors: {
@@ -42,6 +42,15 @@ export default {
       },
       borderRadius: {
         lg: "var(--radius)",
+      },
+      keyframes: {
+        emojiFall: {
+          "0%": { transform: "translateY(-10%)", opacity: 1 },
+          "100%": { transform: "translateY(110vh)", opacity: 0 },
+        },
+      },
+      animation: {
+        emojiFall: "emojiFall 3s linear infinite",
       },
     },
   },
