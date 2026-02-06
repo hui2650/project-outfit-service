@@ -2,7 +2,12 @@
 // recommendByImage(file, limit, textQuery) 함수 하나
 // FormData 만들고 fetch → JSON 반환
 
-export async function recommendByImage(file, limit = 8, textQuery = "") {
+export async function recommendByImage(
+  file,
+  limit = 8,
+  textQuery = "",
+  category = "",
+) {
   const form = new FormData();
 
   // 1) 이미지 파일
@@ -14,6 +19,8 @@ export async function recommendByImage(file, limit = 8, textQuery = "") {
   // 3) 텍스트도 같이 전송 (스프링에서 @RequestParam("textQuery")로 받기)
   //    빈 문자열이면 백엔드에서 무시하거나, q 튜닝에 쓰면 됨
   form.append("textQuery", textQuery);
+
+  form.append("category", category); // ✅ 추가
 
   const res = await fetch("/api/v1/recommend/image", {
     method: "POST",
