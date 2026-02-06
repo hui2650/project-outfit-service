@@ -76,6 +76,11 @@ const SidePanel = ({
         <h2 className="text-sm">게스트 사용자</h2>
         <span className="text-xs">로그인하여 저장하기</span>
       </div>
+
+      <div className="p-6 w-full bg-white shrink-0 border-t ">
+        <h2 className="text-sm">게스트 사용자</h2>
+        <span className="text-xs">로그인하여 저장하기</span>
+      </div>
     </div>
   );
 };
