@@ -1,17 +1,18 @@
-// 상태 7개
-// handleFileSelect, handleSubmit 이벤트 로직
+import React, { useState } from 'react'
 
-// items를 ResultStage로 내려줌
-// file/previewUrl/error/loading 등을 SidePanel에 내려줌
+import Header from '../components/layout/Header'
+import AppShell from '../components/layout/AppShell'
+import ResultStage from '../components/stage/ResultStage'
+import SidePanel from '../components/panel/sidepanel/SidePanel'
 
-import React from "react";
-import AppShell from "../components/layout/AppShell";
-import Header from "../components/layout/Header";
-import ResultStage from "../components/stage/ResultStage";
-import SidePanel from "../components/panel/SidePanel";
-import { recommendByImage } from "../api/recommend";
+import { useFileInput } from '../hooks/useFileInput'
+import { useChatLogs } from '../hooks/useChatLogs'
+import { useRecommend } from '../hooks/useRecommend'
+import { createTurn } from '../utils/createTurn'
+import { useInputOptions } from '../hooks/useInputOptions'
 
 const Home = () => {
+<<<<<<< HEAD
   const [file, setFile] = React.useState(null);
   const [previewUrl, setPreviewUrl] = React.useState(null);
   const [textQuery, setTextQuery] = React.useState("");
@@ -21,73 +22,55 @@ const Home = () => {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState(null);
   const [category, setCategory] = React.useState(null);
+=======
+  const { file, previewUrl, handleFile, setFile } = useFileInput()
+  const { chatLogs, appendTurn, updateTurn } = useChatLogs()
+  const { requestRecommend } = useRecommend({ updateTurn })
+>>>>>>> feature/taehui/default-uI
 
-  // 파일 선택/드랍 처리
-  const handleFile = (f) => {
-    console.log("HANDLE_FILE", f);
-    // 1) 사용자가 선택한 파일(File 객체)을 상태로 저장
-    //   -> 나중에 서버로 업로드할 때 FormData에 넣기 위해 필요
-    // = “업로드할 파일을 잡아두기”
-    setFile(f);
+  const [error, setError] = useState(null)
 
-    // 2) 파일을 새로 선택하면 기존 에러 메시지는 일단 지움
-    //   -> "파일 없음" 같은 에러가 있었으면 업로드 시도 전 초기화
-    setError(null);
+  const {
+    textQuery,
+    setTextQuery,
+    category,
+    setCategory,
+    gender,
+    setGender,
+    reset,
+  } = useInputOptions()
 
-    // 3) f가 null이면 (사용자가 파일 선택 취소했거나, 파일 제거 버튼 눌렀거나)
-    //    미리보기 URL도 없애고 종료
-    if (!f) {
-      setPreviewUrl(null);
-      return;
-    }
-
-    // 5) 선택된 파일 f로 "브라우저가 접근 가능한 임시 URL"을 생성
-    //   -> 이 URL을 <img src="...">에 넣으면 로컬 파일이 화면에 미리보기로 뜸
-    //   -> 예: blob:http://localhost:5173/3f5c... 같은 형태
-    // = “미리보기할 URL 만들기”  = <img src={previewUrl}>
-    setPreviewUrl(URL.createObjectURL(f));
-  };
-
-  // previewUrl 메모리 정리
-  React.useEffect(() => {
-    // previewUrl이 바뀌거나, 컴포넌트가 사라질 때 실행되는 정리 함수
-    // previewUrl이 바뀌기 직전에 이전 값으로 cleanup 실행
-    // 컴포넌트가 unmount(화면에서 사라짐) 될 때 cleanup 실행
-    return () => {
-      // 기존 previewUrl이 있으면 "그 URL이 잡고 있던 브라우저 메모리/리소스"를 해제
-      //   -> createObjectURL은 브라우저 내부에 임시 URL/메모리를 할당하므로, 새 파일로 바뀔 때 이전 걸 revokeObjectURL로 정리해줘야 누수가 줄어듦
-      // = 전에 만들었던 blob URL을 “이제 안 쓸게”라고 브라우저에 알리기
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
-  }, [previewUrl]);
-
-  // 서버 요청
   const handleSubmit = async () => {
+<<<<<<< HEAD
     console.log("SUBMIT", { hasFile: !!file, textQuery, category });
     // (0) 파일이 없으면 업로드 요청 자체를 막음 (프론트 1차 검증)
     //     -> 백엔드 보내봤자 400/에러이므로, 사용자에게 바로 안내하는 UX
+=======
+>>>>>>> feature/taehui/default-uI
     if (!file) {
-      setError({ code: "NO_FILE", message: "이미지를 업로드해주세요" });
-      return; // 아래 API 호출 로직 실행 안 함
+      setError({ code: 'NO_FILE', message: '이미지를 업로드해주세요' })
+      return
     }
 
-    // 🧡 Turn Id 먼저 생성
-    const newTurnId = "turn_" + Date.now();
+    const newTurn = createTurn({
+      file,
+      previewUrl,
+      textQuery,
+      category,
+      gender,
+    })
 
-    // 🧡 Turn 객체 생성 (유저 입력 로그)
-    const newTurn = {
-      id: newTurnId,
-      input: {
-        previewUrl, // 사용자가 올린 이미지 미리보기
-        textQuery, // 사용자가 입력한 텍스트
-      },
-      output: null, // 아직 결과 없음
-    };
+    appendTurn(newTurn)
 
-    // 🧡 요청 시작과 동시에 chatLogs에 추가
-    // -> 이 순간 Stage가 자동으로 아래로 내려감
-    setChatLogs((prev) => [...prev, newTurn]);
+    await requestRecommend({
+      turnId: newTurn.id,
+      file,
+      textQuery,
+      category,
+      gender,
+    })
 
+<<<<<<< HEAD
     // (1) 요청 시작 상태로 전환
     //     -> 버튼 disabled / 로딩 텍스트 표시 등에 사용
     setLoading(true);
@@ -151,38 +134,40 @@ const Home = () => {
       setLoading(false);
     }
   };
+=======
+    setFile(null)
+    reset()
+  }
+>>>>>>> feature/taehui/default-uI
 
   return (
     <>
       <Header />
       <AppShell
-        left={
-          <ResultStage
-            items={items}
-            requestId={requestId}
-            loading={loading}
-            textQuery={textQuery}
-            previewUrl={previewUrl}
-            chatLogs={chatLogs}
-          />
-        }
+        left={<ResultStage chatLogs={chatLogs} />}
         right={
           <SidePanel
             file={file}
+            error={error}
             previewUrl={previewUrl}
-            textQuery={textQuery}
             onTextQuery={setTextQuery}
+<<<<<<< HEAD
             onChangeCategory={setCategory}
+=======
+            textQuery={textQuery}
+            onChangeCategory={setCategory}
+            category={category}
+            onChangeGender={setGender}
+            gender={gender}
+>>>>>>> feature/taehui/default-uI
             onFile={handleFile}
             category={category}
             onSubmit={handleSubmit}
-            loading={loading}
-            error={error}
           />
         }
       />
     </>
-  );
-};
+  )
+}
 
-export default Home;
+export default Home

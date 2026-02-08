@@ -224,26 +224,32 @@ def color_compatible(user_color: str, cand_color: str) -> bool:
 
 # ================= YOLO PERSON + POSE FULLBODY =================
 def yolo_best_person_bbox(img: Image.Image) -> Tuple[Optional[Tuple[float,float,float,float]], int]:
-# ================= BODY CHECK =================
-def bbox_fullbody_and_feet(img: Image.Image) -> Tuple[bool, Dict]:
-    w, h = img.size
+    """
+    가장 큰 person bbox 1개를 반환 + 이미지 내 person 수
+    """
     r = yolo_person.predict(img, verbose=False)[0]
     if r.boxes is None or len(r.boxes) == 0:
         return None, 0
+
     boxes = r.boxes.xyxy.cpu().numpy()
     cls = r.boxes.cls.cpu().numpy()
+
     persons = [i for i, c in enumerate(cls) if int(c) == 0]
     if not persons:
         return None, 0
+
     i = max(persons, key=lambda k: (boxes[k][2]-boxes[k][0])*(boxes[k][3]-boxes[k][1]))
     x1, y1, x2, y2 = boxes[i]
     return (float(x1), float(y1), float(x2), float(y2)), len(persons)
 
+
+# ================= BODY CHECK =================
 def bbox_fullbody_and_feet(img: Image.Image) -> Tuple[bool, Dict]:
     w, h = img.size
     bbox, person_count = yolo_best_person_bbox(img)
     if bbox is None:
         return False, {"person_count": 0}
+
     x1, y1, x2, y2 = bbox
     person_h = (y2 - y1) / h
     top_ratio = y1 / h
@@ -267,6 +273,7 @@ def bbox_fullbody_and_feet(img: Image.Image) -> Tuple[bool, Dict]:
         "person_count": int(person_count),
         "bbox": [float(x1), float(y1), float(x2), float(y2)],
     }
+
 
 def pose_fullbody_gate(img: Image.Image) -> Tuple[bool, Dict[str, Any]]:
     """
@@ -387,12 +394,9 @@ def taxonomy_best(user_crop: Image.Image) -> Tuple[Dict[str, Any], float]:
 
 
 # ================= NAVER IMAGE =================
+import httpx
+
 async def naver_search_once(query: str, display: int = 80, start: int = 1) -> List[Dict[str, Any]]:
-    """
-    ✅ (한국어) Naver image search 1회
-    - sort=sim: 유사도 우선
-    - filter=large: 가능하면 큰 이미지 선호 (품질/전신 확률↑)
-    """
     url = "https://openapi.naver.com/v1/search/image"
     headers = {
         "X-Naver-Client-Id": NAVER_CLIENT_ID,
@@ -406,14 +410,22 @@ async def naver_search_once(query: str, display: int = 80, start: int = 1) -> Li
         "filter": "large",
     }
 
-    async with httpx.AsyncClient(timeout=20) as c:
-        r = await c.get(url, headers=headers, params=params)
-        print("[NAVER]", r.status_code, "| query =", query)
-        if r.status_code != 200:
-            print("[NAVER ERR]", r.text[:300])
-            return []
-        data = r.json()
-        return data.get("items", []) or []
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=5.0, read=20.0, write=10.0, pool=5.0)
+        ) as c:
+            r = await c.get(url, headers=headers, params=params)
+            print("[NAVER]", r.status_code, "| query =", query)
+            if r.status_code != 200:
+                print("[NAVER ERR]", r.text[:300])
+                return []
+            data = r.json()
+            return data.get("items", []) or []
+
+    except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError) as e:
+        print("[NAVER TIMEOUT/CONNECT ERROR]", type(e).__name__, "| query =", query)
+        return []
+
 
 def merge_dedupe(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     seen = set()
@@ -427,15 +439,18 @@ def merge_dedupe(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 async def naver_search_multi(queries: List[str], display_each: int = 80) -> List[Dict[str, Any]]:
-    """
-    ✅ (한국어) query 여러 개를 호출해서 합치기
-    - rawCount=0 문제를 줄이는 핵심
-    """
-    all_items: List[Dict[str, Any]] = []
-    for q in queries:
-        items1 = await naver_search_once(q, display=display_each, start=1)
-        all_items.extend(items1)
+    results = await asyncio.gather(
+        *[naver_search_once(q, display=display_each, start=1) for q in queries],
+        return_exceptions=True
+    )
+    all_items = []
+
+    for r in results:
+        if isinstance(r, Exception):
+            continue
+        all_items.extend(r)
     return merge_dedupe(all_items)
+
 
 
 # ================= OPTIONAL YOLO OBJECT GATE =================
@@ -725,7 +740,7 @@ async def recommend_image(
     # ✅ drop_counts가 비어있는 경우는 "naver_items가 비었음"일 가능성이 큼
     return {
         "requestId": requestId,
-        "items": final,
+        "items": final or [],
         "debug": {
             "detected": {
                 "user_mode": user_mode,
@@ -749,3 +764,6 @@ async def recommend_image(
 
 # 실행:
 # python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000 --log-level debug
+# pip install rembg onnxruntime
+# cd C:\project-outfit-service\outfit-py
+# C:\Users\user\anaconda3\envs\class1\python.exe -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
