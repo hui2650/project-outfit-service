@@ -6,7 +6,7 @@ plugins {
 
 group = 'com.outfit'
 version = '0.0.1-SNAPSHOT'
-description = 'Demo project for Spring Boot'
+description = 'Outfit backend (Spring Boot)'
 
 java {
 	toolchain {
@@ -25,18 +25,33 @@ repositories {
 }
 
 dependencies {
-	implementation 'org.springframework.boot:spring-boot-h2console'
-	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	// MVC API 서버 (Controller 등)
 	implementation 'org.springframework.boot:spring-boot-starter-web'
-	compileOnly 'org.projectlombok:lombok'
-	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+	// WebClient 사용 (Spring -> FastAPI)
+	implementation 'org.springframework.boot:spring-boot-starter-webflux'
+
+	// Validation (@Valid 등)
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+	// JPA + H2 (히스토리 저장/조회 사용 시)
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	runtimeOnly 'com.h2database:h2'
+
+	// DevTools
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+	// Lombok
+	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
-	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
-	testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
-	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+
+	// Test (표준)
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+	// (선택) Resilience4j 붙일 때
+	// implementation 'org.springframework.boot:spring-boot-starter-aop'
+	// implementation 'io.github.resilience4j:resilience4j-spring-boot3'
 }
 
 tasks.named('test') {
