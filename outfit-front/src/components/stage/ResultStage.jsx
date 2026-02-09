@@ -20,15 +20,7 @@ const ResultStage = ({ chatLogs, onSelectItem }) => {
 
   return (
     <div
-      className=" h-full max-w-7xl overflow-y-auto px-4 [scrollbar-width:none] [-ms-overflow-style:none]"
-<<<<<<< HEAD
-      style={{ scrollbarGutter: "stable" }}
-    >
-      <div className="h-full">
-        {chatLogs.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-gray-400">
-            코디 추천을 시작해보세요
-=======
+      className="h-full max-w-7xl overflow-y-auto px-4 [scrollbar-width:none] [-ms-overflow-style:none]"
       style={{ scrollbarGutter: 'stable' }}
     >
       <div className="h-full">
@@ -41,16 +33,11 @@ const ResultStage = ({ chatLogs, onSelectItem }) => {
               아이템 사진을 업로드하거나 텍스트로 설명해주세요. <br /> AI가
               당신에게 어울리는 코디를 추천해드립니다.
             </p>
->>>>>>> feature/taehui/default-uI
           </div>
         ) : (
           <>
             {chatLogs.map((turn) => (
-<<<<<<< HEAD
-              <Turn key={turn.id} turn={turn} loading={loading} />
-=======
               <Turn key={turn.id} turn={turn} onSelectItem={onSelectItem} />
->>>>>>> feature/taehui/default-uI
             ))}
             {/* 맨 아래 기준점 */}
             <div ref={bottomRef} />
