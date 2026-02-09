@@ -632,13 +632,10 @@ async def search_multi_sources(queries: List[str]) -> List[Dict[str, Any]]:
     return all_items[:RAW_POOL_LIMIT]
 
 
-# ================= OPTIONAL YOLO OBJECT GATE =================
-YOLO_NAMES = yolo_person.model.names if hasattr(yolo_person, "model") and hasattr(yolo_person.model, "names") else {}
 
 def yolo_has_any(img: Image.Image, wanted_names: List[str]) -> bool:
     if not wanted_names:
         return True
-    r = yolo_person.predict(img, verbose=False)[0]
     if r.boxes is None or len(r.boxes) == 0:
         return False
     cls = r.boxes.cls.cpu().numpy().astype(int).tolist()
