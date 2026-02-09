@@ -1,40 +1,15 @@
 from __future__ import annotations
+
 import os
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 
-
-"""Styling Recommend API (Naver + Kakao)
-
-Bạn yêu cầu:
-- Thêm Kakao Image Search API để mở rộng dữ liệu (blog/cafe/street snap Hàn).
-- Query mặc định tiếng Hàn, ép 전신/착샷/코디.
-- Lọc “head-to-toe outfit”, giảm ảnh product/screenshot.
-- Bắt buộc item phải thực sự xuất hiện trong outfit.
-- Crop theo category tốt hơn (shoes/bag/top/bottom/dress/outer).
-- Color gate tốt hơn: đo màu đúng vùng item + thêm bước nhanh (RGB prototype) + CLIP xác nhận màu.
-
-⚠️ Lưu ý:
-- Bạn cần set env: KAKAO_REST_API_KEY (REST API Key của Kakao Developers).
-- Naver vẫn dùng NAVER_CLIENT_ID / NAVER_CLIENT_SECRET như cũ.
-
-Run:
-  python -m uvicorn main_kakao:app --reload --host 127.0.0.1 --port 8000 --log-level debug
-"""
-
 import io
-import os
 import asyncio
 import traceback
 from pathlib import Path
 from collections import defaultdict
 from typing import Dict, Any, Optional, List, Tuple
-
-# --- (Windows) OpenMP duplicate runtime workaround (Ultralytics/torch/numpy can trigger this)
-# Safe-ish workaround; if you want to remove, set env var in PowerShell instead.
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-# Also helps reduce thread contention
-os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.responses import JSONResponse
@@ -56,7 +31,8 @@ MODEL_NAME = "openai/clip-vit-base-patch32"
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
 
-KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
+# Kakao optional
+KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY", "")
 
 # ✅ Full-body gates
 PORTRAIT_AR_MIN = 1.02
@@ -119,7 +95,6 @@ clip_model = CLIPModel.from_pretrained(MODEL_NAME).to(device).eval()
 clip_processor = CLIPProcessor.from_pretrained(MODEL_NAME)
 
 from ultralytics import YOLO
-
 yolo_person = YOLO("yolov8n.pt")
 yolo_pose = YOLO("yolov8n-pose.pt")
 
@@ -171,50 +146,16 @@ def clip_scores(img: Image.Image, prompts: List[str]) -> List[float]:
     probs = out.logits_per_image.softmax(dim=1)[0]
     return probs.cpu().tolist()
 
-
-# ================= CLIP FAST (cached text embeddings) =================
-# Cache text tokenization + text embeddings to avoid recomputing for every candidate.
-_TEXT_TOK_CACHE: Dict[str, Dict[str, torch.Tensor]] = {}
-_TEXT_FEAT_CACHE: Dict[str, torch.Tensor] = {}
-
-@torch.no_grad()
-def get_text_features_cached(prompt: str) -> torch.Tensor:
-    p = prompt.strip()
-    if p in _TEXT_FEAT_CACHE:
-        return _TEXT_FEAT_CACHE[p]
-
-    if p not in _TEXT_TOK_CACHE:
-        tok = clip_processor.tokenizer(
-            [p],
-            padding=True,
-            truncation=True,
-            return_tensors="pt"
-        )
-        _TEXT_TOK_CACHE[p] = {k: v.cpu() for k, v in tok.items()}
-
-    tok = {k: v.to(device) for k, v in _TEXT_TOK_CACHE[p].items()}
-    try:
-        tf = clip_model.get_text_features(**tok)
-    except Exception:
-        text_out = clip_model.text_model(**tok)
-        pooled = text_out.pooler_output
-        tf = clip_model.text_projection(pooled)
-
-    tf = tf / tf.norm(dim=-1, keepdim=True)
-    _TEXT_FEAT_CACHE[p] = tf
-    return tf
-
-@torch.no_grad()
-def clip_scores_fast(img: Image.Image, prompts: List[str]) -> List[float]:
-    # image feature once
-    img_feat = get_img_features(img)  # [1, d]
-    # stacked text features
-    tfs = torch.cat([get_text_features_cached(p) for p in prompts], dim=0)  # [n, d]
-    scale = clip_model.logit_scale.exp() if hasattr(clip_model, "logit_scale") else 1.0
-    logits = (img_feat @ tfs.T) * scale
-    probs = logits.softmax(dim=1)[0]
-    return probs.detach().cpu().tolist()
-
+def resize_max_side(img: Image.Image, max_side: int) -> Image.Image:
+    if not max_side or max_side <= 0:
+        return img
+    w, h = img.size
+    m = max(w, h)
+    if m <= max_side:
+        return img
+    scale = max_side / float(m)
+    nw, nh = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
+    return img.resize((nw, nh), Image.BICUBIC)
 
 @torch.no_grad()
 def get_img_features(img: Image.Image) -> torch.Tensor:
@@ -230,7 +171,6 @@ def get_img_features(img: Image.Image) -> torch.Tensor:
     except Exception:
         feats = None
 
-    # fallback
     if feats is None or not torch.is_tensor(feats):
         vision_out = clip_model.vision_model(pixel_values=pixel_values)
         pooled = vision_out.pooler_output
@@ -239,6 +179,42 @@ def get_img_features(img: Image.Image) -> torch.Tensor:
     feats = feats / feats.norm(dim=-1, keepdim=True)
     return feats
 
+# ================= CLIP FAST (cached text embeddings) =================
+_TEXT_TOK_CACHE: Dict[str, Dict[str, torch.Tensor]] = {}
+_TEXT_FEAT_CACHE: Dict[str, torch.Tensor] = {}
+
+@torch.no_grad()
+def get_text_features_cached(prompt: str) -> torch.Tensor:
+    p = prompt.strip()
+    if p in _TEXT_FEAT_CACHE:
+        return _TEXT_FEAT_CACHE[p]
+
+    if p not in _TEXT_TOK_CACHE:
+        tok = clip_processor.tokenizer([p], padding=True, truncation=True, return_tensors="pt")
+        _TEXT_TOK_CACHE[p] = {k: v.cpu() for k, v in tok.items()}
+
+    tok = {k: v.to(device) for k, v in _TEXT_TOK_CACHE[p].items()}
+
+    try:
+        tf = clip_model.get_text_features(**tok)
+    except Exception:
+        # fallback
+        text_out = clip_model.text_model(**tok)
+        pooled = text_out.pooler_output
+        tf = clip_model.text_projection(pooled)
+
+    tf = tf / tf.norm(dim=-1, keepdim=True)
+    _TEXT_FEAT_CACHE[p] = tf
+    return tf
+
+@torch.no_grad()
+def clip_scores_fast(img: Image.Image, prompts: List[str]) -> List[float]:
+    img_feat = get_img_features(img)  # [1, d]
+    tfs = torch.cat([get_text_features_cached(p) for p in prompts], dim=0)  # [n, d]
+    scale = clip_model.logit_scale.exp() if hasattr(clip_model, "logit_scale") else 1.0
+    logits = (img_feat @ tfs.T) * scale
+    probs = logits.softmax(dim=1)[0]
+    return probs.detach().cpu().tolist()
 
 # ================= COLOR (rembg + LAB + fast RGB) =================
 COLOR_LABELS = ["black", "white", "gray", "beige", "brown", "navy"]
@@ -273,16 +249,22 @@ def lab_prototypes() -> Dict[str, np.ndarray]:
 
 LAB_PROTOS = lab_prototypes()
 
+def fast_rgb_color(img_rgb: Image.Image) -> Tuple[str, float]:
+    img2 = center_square_crop(img_rgb, 0.80)
+    arr = np.asarray(img2, dtype=np.float32).reshape(-1, 3)
+    med = np.median(arr, axis=0)
+    dists = {k: float(np.linalg.norm(med - p)) for k, p in FAST_RGB_PROTOS.items()}
+    best = min(dists, key=dists.get)
+    conf = float(clamp(1.0 - dists[best] / 120.0, 0.0, 1.0))
+    return best, conf
 
 def dominant_color_label_fast_lab(img_rgb: Image.Image) -> Tuple[str, float]:
-    # ✅ fast fallback: no rembg, just center crop median in LAB
     img2 = center_square_crop(img_rgb, 0.78)
     med = np.median(rgb_to_lab_image(img2).reshape(-1, 3), axis=0)
     dists = {k: float(np.linalg.norm(med - p)) for k, p in LAB_PROTOS.items()}
     best = min(dists, key=dists.get)
     conf = float(clamp(1.0 - dists[best] / 60.0, 0.0, 1.0))
     return best, conf
-
 
 def rembg_alpha(img_rgb: Image.Image) -> np.ndarray:
     if not REMBG_OK:
@@ -294,25 +276,15 @@ def rembg_alpha(img_rgb: Image.Image) -> np.ndarray:
     alpha = np.asarray(out_img.split()[-1], dtype=np.float32) / 255.0
     return alpha
 
-def fast_rgb_color(img_rgb: Image.Image) -> Tuple[str, float]:
-    """Very fast approx color from center crop median RGB."""
-    img2 = center_square_crop(img_rgb, 0.80)
-    arr = np.asarray(img2, dtype=np.float32).reshape(-1, 3)
-    med = np.median(arr, axis=0)
-    dists = {k: float(np.linalg.norm(med - p)) for k, p in FAST_RGB_PROTOS.items()}
-    best = min(dists, key=dists.get)
-    conf = float(clamp(1.0 - dists[best] / 120.0, 0.0, 1.0))
-    return best, conf
-
 def dominant_color_label_rembg_lab(img_rgb: Image.Image) -> Tuple[str, float]:
-    """More accurate color: rembg fg median in LAB -> prototype distance."""
-    # fallback to fast if rembg fails
+    """Accurate color: rembg fg median in LAB -> prototype distance (fallback to fast)."""
     if not REMBG_OK:
         return fast_rgb_color(img_rgb)
 
     try:
         a = rembg_alpha(img_rgb)
         lab = rgb_to_lab_image(img_rgb)
+
         fg = a > 0.35
         if fg.sum() < 80:
             img2 = center_square_crop(img_rgb, 0.80)
@@ -351,8 +323,18 @@ def fast_color_distance_ok(user_color: str, cand_crop: Image.Image) -> bool:
     cand, _ = fast_rgb_color(cand_crop)
     if cand == user_color:
         return True
-    # loose compatible shortcut
     return color_compatible(user_color, cand)
+
+def color_confirm_prompts(item_en: str, user_color: str) -> List[str]:
+    col = (user_color or "").strip()
+    if not col:
+        return []
+    negatives = [c for c in COLOR_LABELS if c != col][:4]
+    return [
+        f"a photo of {col} {item_en}",
+        f"a person wearing {col} {item_en}",
+        *[f"a photo of {c} {item_en}" for c in negatives],
+    ]
 
 # ================= YOLO PERSON + POSE FULLBODY =================
 def yolo_best_person_bbox(img: Image.Image) -> Tuple[Optional[Tuple[float, float, float, float]], int]:
@@ -373,8 +355,8 @@ def bbox_fullbody_and_feet(img: Image.Image) -> Tuple[bool, Dict[str, Any]]:
     bbox, person_count = yolo_best_person_bbox(img)
     if bbox is None:
         return False, {"person_count": 0}
-    x1, y1, x2, y2 = bbox
 
+    x1, y1, x2, y2 = bbox
     person_h = (y2 - y1) / max(1, h)
     top_ratio = y1 / max(1, h)
     bottom_ratio = y2 / max(1, h)
@@ -385,7 +367,6 @@ def bbox_fullbody_and_feet(img: Image.Image) -> Tuple[bool, Dict[str, Any]]:
     multi_ok = (person_count <= MULTI_PERSON_MAX)
 
     ok = (full_ok and feet_ok and head_ok and multi_ok)
-
     return ok, {
         "person_h": float(person_h),
         "top_ratio": float(top_ratio),
@@ -421,7 +402,6 @@ def pose_fullbody_gate(img: Image.Image) -> Tuple[bool, Dict[str, Any]]:
     pts = xy[best_i]
     cfs = conf[best_i]
 
-    # COCO: nose=0, left_ankle=15, right_ankle=16
     if cfs[0] <= 0.20:
         return False, {"pose": "nose_missing"}
     la_ok = cfs[15] > 0.20
@@ -438,15 +418,17 @@ def pose_fullbody_gate(img: Image.Image) -> Tuple[bool, Dict[str, Any]]:
     head_ok = nose_y <= 0.22
     feet_ok = ankle_y >= 0.90
     ok = head_ok and feet_ok
-
-    return ok, {"nose_y": round(nose_y, 4), "ankle_y": round(ankle_y, 4), "head_ok": int(head_ok), "feet_ok": int(feet_ok)}
+    return ok, {
+        "nose_y": round(nose_y, 4),
+        "ankle_y": round(ankle_y, 4),
+        "head_ok": int(head_ok),
+        "feet_ok": int(feet_ok),
+    }
 
 # ================= CATEGORY CROPS =================
 def crop_region_by_part(person_crop: Image.Image, part: str) -> Image.Image:
-    """Base crop (kept from your original logic)."""
     w, h = person_crop.size
     part = part or "torso"
-
     if part == "head":
         return safe_crop(person_crop, 0, h * 0.00, w, h * 0.25)
     if part == "upper":
@@ -460,14 +442,11 @@ def crop_region_by_part(person_crop: Image.Image, part: str) -> Image.Image:
     return safe_crop(person_crop, 0, h * 0.12, w, h * 0.85)
 
 def multi_crops_for_part(person_crop: Image.Image, part: str) -> List[Image.Image]:
-    """Improve item presence: try several candidate crops and pick the best."""
     w, h = person_crop.size
     crops: List[Image.Image] = []
 
-    # base
     crops.append(crop_region_by_part(person_crop, part))
 
-    # category-tuned variants
     if part == "feet":
         crops.append(safe_crop(person_crop, 0, h * 0.62, w, h * 1.00))
         crops.append(safe_crop(person_crop, w * 0.08, h * 0.65, w * 0.92, h * 1.00))
@@ -483,18 +462,14 @@ def multi_crops_for_part(person_crop: Image.Image, part: str) -> List[Image.Imag
     else:
         crops.append(safe_crop(person_crop, 0, h * 0.05, w, h * 0.95))
 
-    # center fallback (helps for crossbody bag / long coat)
     crops.append(center_square_crop(person_crop, 0.72))
 
     out = [c for c in crops if short_side(c) >= 160]
     return out
 
-# ================= TAXONOMY (expanded for better shoes/outer) =================
+# ================= TAXONOMY (ANY ITEM) =================
 ITEM_TAXONOMY: List[Dict[str, Any]] = [
-    # footwear (expanded)
-    {"en": "slippers", "kr": ["슬리퍼", "쪼리"], "part": "feet", "yolo_classes": []},
-    {"en": "sandals", "kr": ["샌들"], "part": "feet", "yolo_classes": []},
-    {"en": "heels", "kr": ["하이힐", "힐"], "part": "feet", "yolo_classes": []},
+    # shoes
     {"en": "sneakers", "kr": ["운동화", "스니커즈"], "part": "feet", "yolo_classes": []},
     {"en": "boots", "kr": ["부츠"], "part": "feet", "yolo_classes": []},
     {"en": "loafers", "kr": ["로퍼"], "part": "feet", "yolo_classes": []},
@@ -515,8 +490,8 @@ ITEM_TAXONOMY: List[Dict[str, Any]] = [
     # dress
     {"en": "dress", "kr": ["원피스"], "part": "torso", "yolo_classes": []},
 
-    # outerwear (expanded)
-    {"en": "long coat", "kr": ["롱코트"], "part": "torso", "yolo_classes": []},
+    # outerwear
+    {"en": "long coat", "kr": ["롱코트", "코트"], "part": "torso", "yolo_classes": []},
     {"en": "short coat", "kr": ["숏코트"], "part": "torso", "yolo_classes": []},
     {"en": "trench coat", "kr": ["트렌치코트", "트렌치"], "part": "torso", "yolo_classes": []},
     {"en": "puffer jacket", "kr": ["패딩", "푸퍼"], "part": "torso", "yolo_classes": []},
@@ -542,6 +517,7 @@ def taxonomy_prompts() -> List[str]:
 def taxonomy_best(user_crop: Image.Image) -> Tuple[Dict[str, Any], float]:
     prompts = taxonomy_prompts()
     scores = clip_scores_fast(user_crop, prompts)
+
     idx = int(torch.tensor(scores).argmax())
     best_item = ITEM_TAXONOMY[idx]
     best_prob = float(scores[idx])
@@ -561,25 +537,32 @@ async def naver_search_once(query: str, display: int = 80, start: int = 1) -> Li
         "sort": "sim",
         "filter": "large",
     }
-    async with httpx.AsyncClient(timeout=20) as c:
-        r = await c.get(url, headers=headers, params=params)
-        print("[NAVER]", r.status_code, "|", query)
-        if r.status_code != 200:
-            print("[NAVER ERR]", r.text[:300])
-            return []
-        data = r.json()
-        items = data.get("items", []) or []
-        # normalize fields
-        out = []
-        for it in items:
-            out.append({
-                "link": it.get("link"),
-                "thumbnail": it.get("thumbnail"),
-                "originallink": it.get("originallink") or it.get("link"),
-                "title": (it.get("title") or "").replace("<b>", "").replace("</b>", ""),
-                "_source": "naver",
-            })
-        return out
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=5.0, read=20.0, write=10.0, pool=5.0)
+        ) as c:
+            r = await c.get(url, headers=headers, params=params)
+            print("[NAVER]", r.status_code, "|", query)
+            if r.status_code != 200:
+                print("[NAVER ERR]", r.text[:300])
+                return []
+            data = r.json()
+            items = data.get("items", []) or []
+            # normalize fields
+            out = []
+            for it in items:
+                out.append({
+                    "link": it.get("link"),
+                    "thumbnail": it.get("thumbnail"),
+                    "originallink": it.get("originallink") or it.get("link"),
+                    "title": (it.get("title") or "").replace("<b>", "").replace("</b>", ""),
+                    "_source": "naver",
+                })
+            return out
+    except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError) as e:
+        print("[NAVER TIMEOUT/CONNECT ERROR]", type(e).__name__, "|", query)
+        return []
 
 async def kakao_search_once(query: str, size: int = 80, page: int = 1) -> List[Dict[str, Any]]:
     if not KAKAO_REST_API_KEY:
@@ -625,13 +608,25 @@ def merge_dedupe(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 async def search_multi_sources(queries: List[str]) -> List[Dict[str, Any]]:
-    all_items: List[Dict[str, Any]] = []
+    tasks = []
     for q in queries:
         if NAVER_CLIENT_ID and NAVER_CLIENT_SECRET:
-            all_items.extend(await naver_search_once(q, display=NAVER_DISPLAY_EACH, start=1))
+            tasks.append(naver_search_once(q, display=NAVER_DISPLAY_EACH, start=1))
         if KAKAO_REST_API_KEY:
-            all_items.extend(await kakao_search_once(q, size=KAKAO_SIZE_EACH, page=1))
-    return merge_dedupe(all_items)
+            tasks.append(kakao_search_once(q, size=KAKAO_SIZE_EACH, page=1))
+
+    if not tasks:
+        return []
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    all_items: List[Dict[str, Any]] = []
+    for r in results:
+        if isinstance(r, Exception):
+            continue
+        all_items.extend(r)
+
+    all_items = merge_dedupe(all_items)
+    return all_items[:RAW_POOL_LIMIT]
 
 # ================= OPTIONAL YOLO OBJECT GATE =================
 YOLO_NAMES = yolo_person.model.names if hasattr(yolo_person, "model") and hasattr(yolo_person.model, "names") else {}
@@ -673,13 +668,6 @@ def choose_distractors(item_en: str, item_part: str) -> List[str]:
     return ["clothing", "fashion item", "outfit", "product photo"]
 
 def item_presence_prompts(item_en: str, user_color: str, distractors: List[str]) -> List[str]:
-    """CLIP prompts optimized for 'wearing in outfit' vs product/screenshot.
-
-    Layout:
-      - first 3: TARGET wearing
-      - next 3: BAD (product/screenshot)
-      - rest: distractor wearing
-    """
     col = (user_color or "").strip()
     col_phrase = f"{col} " if col else ""
 
@@ -688,31 +676,16 @@ def item_presence_prompts(item_en: str, user_color: str, distractors: List[str])
         f"a person wearing {col_phrase}{item_en} in an outfit photo",
         f"street style outfit with {col_phrase}{item_en}",
     ]
-
     bads = [
         f"a product photo of {col_phrase}{item_en}",
         f"a close-up product shot of {col_phrase}{item_en}",
         "a screenshot of a shopping webpage",
     ]
-
     dist = []
     for d in [x for x in distractors if x != item_en][:4]:
         dist.append(f"a full body street fashion photo of a person wearing {d}")
 
     return targets + bads + dist
-
-def color_confirm_prompts(item_en: str, user_color: str) -> List[str]:
-    # CLIP color confirmation (helps when LAB misfires due to lighting)
-    col = (user_color or "").strip()
-    if not col:
-        return []
-    # include a few close colors as negatives
-    negatives = [c for c in COLOR_LABELS if c != col][:4]
-    return [
-        f"a photo of {col} {item_en}",
-        f"a person wearing {col} {item_en}",
-        *[f"a photo of {c} {item_en}" for c in negatives],
-    ]
 
 # ================= MAIN =================
 @app.post("/recommend/image")
@@ -730,12 +703,10 @@ async def recommend_image(
         return {"error": "NAVER_CLIENT_ID/SECRET 없음"}
     if not REMBG_OK:
         return {"error": "rembg 미설치/로드 실패 (pip install rembg onnxruntime 필요)"}
-    # Kakao optional but recommended
 
     user_img = pil_rgb(await image.read())
     user_q = (textQuery or "").strip()
 
-    # drop counters
     drop_counts = defaultdict(int)
     drop_lock = asyncio.Lock()
 
@@ -770,24 +741,19 @@ async def recommend_image(
     user_color, user_color_conf = dominant_color_label_rembg_lab(user_item_crop)
     user_item_features = get_img_features(user_item_crop)
 
-    # 3) Korean-first queries (force street snaps)
+    # 3) Korean-first queries
     color_kor = COLOR_KOR.get(user_color, "")
     item_kor = item_kr_list[0] if item_kr_list else "패션"
 
-    # Kakao/Naver both accept Korean queries well
-    # Add stronger Korean sources: 블로그/카페/무신사스냅/OOTD/전신/착용
     q1 = f"{color_kor} {item_kor} 전신 착샷 코디 룩북 무신사 스냅 OOTD 착용 {user_q}".strip()
     q2 = f"{color_kor} {item_kor} 데일리룩 스트릿 스냅 전신 코디 착용 {user_q}".strip()
     q3 = f"{item_kor} 전신 코디 착샷 룩북 무신사 스냅 착용 {user_q}".strip()
     q4 = f"{item_kor} 코디 전신 OOTD 스트릿룩 착용 {user_q}".strip()
     queries = [q1, q2, q3, q4]
 
-    # 3.5) fetch candidates from both sources
     candidates = await search_multi_sources(queries)
-
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
 
-    # 4) process
     async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
 
         async def process(it: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -856,16 +822,18 @@ async def recommend_image(
                     distractors = choose_distractors(item_en, item_part)
                     prompts = item_presence_prompts(item_en, user_color, distractors)
 
-                    best_t = -1.0
-                    best_margin12 = -1.0
-                    best_margin_vs_bad = -1.0
+                    best_local = -1e9
+                    best_margin12 = -1e9
+                    best_margin_vs_bad = -1e9
                     best_crop = None
                     best_rs: Optional[List[float]] = None
+                    best_t_best_real = 0.0
 
                     for c in crops:
-                        # fast color prefilter (avoid spending CLIP on wrong colors)
+                        # fast color prefilter
                         if COLOR_STRICT_DEFAULT and not fast_color_distance_ok(user_color, c):
                             continue
+
                         rs = clip_scores_fast(c, prompts)
                         t_best = float(max(rs[0:3]))
                         b_best = float(max(rs[3:6]))
@@ -873,24 +841,21 @@ async def recommend_image(
                         srt = sorted(rs, reverse=True)
                         margin12 = float(srt[0] - srt[1]) if len(srt) >= 2 else 0.0
 
-                        # score local: prioritize true wearing (t_best) + separation vs product
                         local = 0.70 * t_best + 0.30 * margin_vs_bad
-
-                        if local > best_t:
-                            best_t = local
+                        if local > best_local:
+                            best_local = local
                             best_margin12 = margin12
                             best_margin_vs_bad = margin_vs_bad
                             best_crop = c
                             best_rs = rs
+                            best_t_best_real = t_best
 
-                    if best_crop is None:
+                    if best_crop is None or best_rs is None:
                         await drop("item_crop_fail")
                         return None
 
-                    # apply item thresholds on best crop
-                    # t_best is inside local, but we still check real t_best
-                    t_best_real = float(max(best_rs[0:3])) if best_rs else 0.0
-                    if t_best_real < ITEM_REGION_MIN_PROB:
+                    # apply thresholds
+                    if best_t_best_real < ITEM_REGION_MIN_PROB:
                         await drop("item_region_low")
                         return None
                     if best_margin12 < ITEM_REGION_MARGIN_MIN:
@@ -913,12 +878,11 @@ async def recommend_image(
                         await drop("color_compat_mismatch")
                         return None
 
-                    # CLIP color confirmation (only when strict is allowed, to reduce sandals vs heels mix)
+                    # CLIP color confirmation
                     if user_color and strict_allowed:
                         c_prompts = color_confirm_prompts(item_en, user_color)
                         if c_prompts:
                             cs = clip_scores_fast(best_crop, c_prompts)
-                            # index 0/1 are target color, others are other colors
                             color_yes = float(max(cs[0:2]))
                             color_no = float(max(cs[2:])) if len(cs) > 2 else 0.0
                             if color_yes < color_no + 0.02:
@@ -944,16 +908,14 @@ async def recommend_image(
                         style_scores = clip_scores_fast(person_crop, style_prompts)
                         style_score = float(max(style_scores))
 
-                    # scoring (keep same structure; tune weights slightly toward presence)
                     score = (
                         0.46 * visual_sim +
-                        0.28 * t_best_real +
+                        0.28 * best_t_best_real +
                         0.10 * best_margin_vs_bad +
                         0.06 * style_score +
                         0.05 * ar_score +
                         0.05 * float(bbox.get("person_h", 0.0))
                     )
-
                     if not ok_pose:
                         score -= POSE_GATE_PENALTY
 
@@ -982,7 +944,7 @@ async def recommend_image(
                             "strict_color_allowed": int(strict_allowed),
                             "strict_ok": int(bool(strict_ok)),
                             "compat_ok": int(bool(compat_ok)),
-                            "t_best": round(t_best_real, 4),
+                            "t_best": round(best_t_best_real, 4),
                             "margin_vs_bad": round(float(best_margin_vs_bad), 4),
                             "margin_12": round(float(best_margin12), 4),
                             "visual_sim": round(visual_sim, 4),
@@ -1007,7 +969,7 @@ async def recommend_image(
 
     return {
         "requestId": requestId,
-        "items": final,
+        "items": final or [],
         "debug": {
             "detected": {
                 "user_mode": user_mode,
@@ -1037,15 +999,7 @@ async def recommend_image(
             "drop_counts": dict(sorted(drop_counts.items(), key=lambda kv: kv[1], reverse=True)),
         },
     }
-def resize_max_side(img: Image.Image, max_side: int) -> Image.Image:
-    if not max_side or max_side <= 0:
-        return img
-    w, h = img.size
-    m = max(w, h)
-    if m <= max_side:
-        return img
-    scale = max_side / float(m)
-    nw, nh = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
-    return img.resize((nw, nh), Image.BICUBIC)
 
-
+# 실행:
+# python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000 --log-level debug
+# pip install rembg onnxruntime
