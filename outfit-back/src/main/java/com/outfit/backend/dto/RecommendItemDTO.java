@@ -1,7 +1,7 @@
 package com.outfit.backend.dto;
 
 public record RecommendItemDTO(
-	Integer rank,
+	int rank,
     String imageUrl,
     String title,
     String source
