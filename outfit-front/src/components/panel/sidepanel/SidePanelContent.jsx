@@ -1,12 +1,13 @@
-import React from "react";
-import UploadDropzone from "../UploadDropzone";
-import GenderChoice from "../GenderChoice";
-import CategoryChoice from "../CategoryChoice";
-import TextQueryBox from "../TextQueryBox";
-import SubmitButton from "../SubmitButton";
+import React from 'react'
+import UploadDropzone from '../UploadDropzone'
+import GenderChoice from '../GenderChoice'
+import CategoryChoice from '../CategoryChoice'
+import TextQueryBox from '../TextQueryBox'
+import SubmitButton from '../SubmitButton'
 
 const SidePanelContent = ({
   previewUrl,
+  inputRef,
   textQuery,
   onTextQuery,
   onFile,
@@ -18,8 +19,7 @@ const SidePanelContent = ({
   onChangeGender,
   file,
 }) => {
-  const inputRef = React.useRef(null);
-  const pickFile = () => inputRef.current?.click();
+  const pickFile = () => inputRef.current?.click()
 
   return (
     <div className="bg-card/90 p-8 flex-1 overflow-y-auto">
@@ -55,7 +55,7 @@ const SidePanelContent = ({
         isReadyToSubmit={!!file && !!category && !!gender} //!!file: 파일이 존재하면 true, 선택된 카테고리가 있다면 true 둘 다 있어야 버튼이 활성화됨
       />
     </div>
-  );
-};
+  )
+}
 
-export default SidePanelContent;
+export default SidePanelContent
