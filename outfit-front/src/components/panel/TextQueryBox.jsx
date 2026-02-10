@@ -12,7 +12,7 @@ const TextQueryBox = ({ textQuery, onTextQuery }) => {
         placeholder='(예: "베이지 싱글코트")'
         value={textQuery}
         onChange={(e) => onTextQuery(e.target.value)}
-      ></textarea>
+      />
     </div>
   );
 };

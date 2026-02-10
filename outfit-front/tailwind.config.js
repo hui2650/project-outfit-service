@@ -54,6 +54,8 @@ export default {
       borderRadius: {
         lg: "var(--radius)",
       },
+
+      // ✅ keyframes 한 번만
       keyframes: {
         slotShow: {
           "0%": { opacity: "0", transform: "scale(0.95)" },
@@ -70,8 +72,13 @@ export default {
           "20%": { strokeDashoffset: "520" },
           "100%": { strokeDashoffset: "520" },
         },
+        emojiFall: {
+          '0%': { transform: 'translateY(-10%)', opacity: '1' },
+          '100%': { transform: 'translateY(110vh)', opacity: '0' },
+        },
       },
 
+      // ✅ animation 한 번만
       animation: {
         slot1: "slotShow 10s ease-in-out 0s infinite both",
         slot2: "slotShow 10s ease-in-out 2s infinite both",
