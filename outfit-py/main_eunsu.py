@@ -34,8 +34,9 @@ OPENVERSE_CLIENT_SECRET = os.getenv("OPENVERSE_CLIENT_SECRET")
 PORTRAIT_AR_MIN = 1.02
 BBOX_FEET_Y_MIN = 0.86
 
-ITEM_TOP1_MIN_PROB = 0.18
+ITEM_TOP1_MIN_PROB = 0.22
 ITEM_MARGIN_MIN = 0.03
+GENDER_MARGIN = 0.03
 
 COLOR_STRICT = False
 
@@ -44,6 +45,16 @@ FINAL_LIMIT_DEFAULT = 8
 
 # ================= APP =================
 app = FastAPI(title="Styling Recommend API")
+
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.exception_handler(Exception)
 async def all_exception_handler(request: Request, exc: Exception):
@@ -192,9 +203,10 @@ async def naver_search(query: str, display=50):
 @app.post("/recommend/image")
 async def recommend_image(
     image: UploadFile = File(...),
+    gender: str = Form(""),
     limit: int = Form(FINAL_LIMIT_DEFAULT),
     requestId: str = Form(...),
-    textQuery: str = Form("") 
+    textQuery: str = Form("")
 ):
     print("\n[REQ] HIT /recommend/image")
     print("[REQ] requestId=", requestId, "textQuery=", textQuery, "limit=", limit)
@@ -465,7 +477,7 @@ async def recommend_image(
                         penalty += 0.05
 
                     # 사용자가 올린 아이템과 너무 안 닮으면 패널티
-                    if visual_sim < 0.35:
+                    if visual_sim < 0.25:
                         penalty += 0.10    
 
                     score -= penalty
@@ -478,6 +490,12 @@ async def recommend_image(
                     gender_scores = clip_scores(img, gender_prompts)
                     gender_score_man = gender_scores[0]
                     gender_score_woman = gender_scores[1]
+
+                    if gender == "man" and (gender_score_man + GENDER_MARGIN) < gender_score_woman:
+                        return None
+
+                    if gender == "woman" and (gender_score_woman + GENDER_MARGIN) < gender_score_man:
+                        return None
 
                     print("GENDER SCORE (process)", gender_score_man, gender_score_woman)
 
@@ -528,5 +546,5 @@ async def recommend_image(
     }
            
 
-# python -m uvicorn main:app --reload
-# python -m uvicorn main:app --host 0.0.0.0 --port 8000 --log-level debug
+# python -m uvicorn main_eunsu:app --reload
+# python -m uvicorn main_eunsu:app --host 0.0.0.0 --port 8000 --log-level debug
