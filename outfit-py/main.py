@@ -32,10 +32,13 @@ OPENVERSE_CLIENT_ID = os.getenv("OPENVERSE_CLIENT_ID")
 OPENVERSE_CLIENT_SECRET = os.getenv("OPENVERSE_CLIENT_SECRET")
 
 PORTRAIT_AR_MIN = 1.02
-BBOX_FEET_Y_MIN = 0.86
 
-ITEM_TOP1_MIN_PROB = 0.18
-ITEM_MARGIN_MIN = 0.03
+# [TUNED] 전신 기준 조금 강화
+BBOX_FEET_Y_MIN = 0.92
+
+# [TUNED] 아이템 확신도 기준 강화
+ITEM_TOP1_MIN_PROB = 0.22
+ITEM_MARGIN_MIN = 0.08
 
 COLOR_STRICT = False
 
@@ -77,9 +80,7 @@ def get_img_features(img: Image.Image) -> torch.Tensor:
     # 2) fallback: vision_model만 사용 (text_model 절대 타지 않음)
     if feats is None or not torch.is_tensor(feats):
         vision_out = clip_model.vision_model(pixel_values=pixel_values)
-        # vision_out.pooler_output: [B, hidden]
         pooled = vision_out.pooler_output
-        # CLIP은 projection을 거친 게 feature
         feats = clip_model.visual_projection(pooled)
 
     # 3) 안전장치
@@ -88,7 +89,6 @@ def get_img_features(img: Image.Image) -> torch.Tensor:
 
     feats = feats / feats.norm(dim=-1, keepdim=True)
     return feats
-
 
 
 # ================= UTILS =================
@@ -149,7 +149,8 @@ def bbox_fullbody_and_feet(img: Image.Image) -> Tuple[bool, Dict]:
     top_ratio = y1 / h
     bottom_ratio = y2 / h
 
-    full_ok = person_h >= 0.7
+    # [TUNED] 전신 기준 강화
+    full_ok = person_h >= 0.78
     feet_ok = bottom_ratio >= BBOX_FEET_Y_MIN
     head_ok = top_ratio <= 0.15
 
@@ -264,8 +265,6 @@ async def recommend_image(
         "accessory": "a photo of an accessory (bag, cap, belt)",
     }
 
-    # 1. 매핑 테이블 정의 
-
     cat_kor_map = {
         "footwear": "신발",
         "top": "상의",
@@ -274,7 +273,6 @@ async def recommend_image(
         "accessory": "악세사리",
     }
 
-    # 2 baseLabel(영어) -> 최소한의 한국어 힌트(간단 매핑, 없으면 base 그대로)
     base_kor_map = {
         "white t-shirt": "흰 티",
         "hoodie": "후드티",
@@ -299,7 +297,6 @@ async def recommend_image(
 # ====================================================================
 
     # 2. 색상 추출
-
     COLOR_LABELS = ["black","white","gray","beige","brown","navy"]
     color_prompts = [
         f"a close-up fabric texture in {c} color" for c in COLOR_LABELS
@@ -308,28 +305,22 @@ async def recommend_image(
     ]
     color_scores = clip_scores(user_img, color_prompts)
 
-    # prompt가 2세트라서 인덱스를 색상으로 다시 묶어야 함
-    # (각 색상이 2개 prompt를 가짐)
     by_color = []
     for i in range(len(COLOR_LABELS)):
         by_color.append(max(color_scores[i], color_scores[i+len(COLOR_LABELS)]))
 
     detected_color = COLOR_LABELS[int(torch.tensor(by_color).argmax())]
-
     color_kor = color_kor_map.get(detected_color, "")
 
 # ====================================================================
 
     # 3. 카테고리 및 Subtype 추론
-
-    # [3] 카테고리 추론 (best_idx 사용)
     category_prompts = list(CATEGORY_LABELS.values())
     cat_scores = clip_scores(user_img, category_prompts)
     best_idx = int(torch.tensor(cat_scores).argmax())
     cat_key = list(CATEGORY_LABELS.keys())[best_idx]
     cat_kor = cat_kor_map.get(cat_key, "패션")
 
-    # [4] Subtype 추론 (top_idx, baseLabel 사용)
     subtype_prompts = SUBTYPE_PROMPTS.get(cat_key, DEFAULT_PROMPTS)
     subtype_scores = clip_scores(user_img, subtype_prompts)
     top_idx = int(torch.tensor(subtype_scores).argmax())
@@ -339,10 +330,8 @@ async def recommend_image(
     base = baseLabel.strip()                                  
     base_kor = base_kor_map.get(base, base)
 
-
 # ====================================================================
 
-    
     # [5] 아우터 디테일 (코트 길이)
     if cat_key == "outerwear":
         LENGTH_PROMPTS = ["short length", "long length", "midi length"]
@@ -357,38 +346,35 @@ async def recommend_image(
 
 # ====================================================================
 
-    # [6] 검색 쿼리 생성 (모든 정보가 취합된 후 실행)
-    # 예: "베이지 숏 코트 전신 코디 룩북"
+    # [6] 검색 쿼리 생성
     korean_query = f"{color_kor} {cat_kor} {base_kor} {user_q} 전신 코디 착샷 룩북 스타일링".strip()
 
     naver_items = await naver_search(korean_query, display=100)
-    if len(naver_items) < 20: # 결과가 너무 적으면 쿼리 완화
+    if len(naver_items) < 20:
         wider_query = f"{base_kor} 전신 코디"
         extra_items = await naver_search(wider_query, display=50)
         naver_items.extend(extra_items)
 
     seen = set()
     unique = []
-
     for it in naver_items:
         if it["link"] not in seen:
             unique.append(it)
             seen.add(it["link"])
     naver_items = unique
 
-
 # ====================================================================
 
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
-    
+
 # ====================================================================
 
-    # [7]. 시각적 유사도용 특징 추출 (process 밖에서 한 번만)
+    # [7] 사용자 이미지 feature
     user_features = get_img_features(user_img)
 
 # ====================================================================
 
-    # [8]. 개별 이미지 처리 (process)
+    # [8] 개별 이미지 처리
     async with httpx.AsyncClient(timeout=15) as client:
 
         async def process(it):
@@ -398,7 +384,6 @@ async def recommend_image(
                     r = await client.get(it["link"])
                     if r.status_code != 200:
                             return None
-                    # 이미지 변환 예외 처리 추가
                     try:
                         img = pil_rgb(r.content)
                     except:
@@ -408,13 +393,32 @@ async def recommend_image(
                     ok, bbox = bbox_fullbody_and_feet(img)
                     if not ok:
                         return None
-                    
-                    # 3) 시각적 유사도 계산 (추가된 핵심 로직)
+
+                    # [ADDED] 코디(착샷) vs 상품컷 필터
+                    outfit_prompts = [
+                        "a full body fashion outfit",
+                        "street fashion look",
+                        "person wearing coordinated outfit",
+                    ]
+                    bad_prompts = [
+                        "product only clothing",
+                        "clothes on white background",
+                        "advertisement banner",
+                        "text poster",
+                    ]
+                    scores = clip_scores(img, outfit_prompts + bad_prompts)
+                    outfit_score = max(scores[:3])
+                    bad_score = max(scores[3:])
+                    if outfit_score < bad_score + 0.08:
+                        return None
+
+                    # 3) 시각적 유사도 계산
                     cand_features = get_img_features(img)
-                    
-                    # 코사인 유사도 계산 (사용자 이미지 vs 검색된 코디 이미지)
-                    # 이 점수가 높을수록 사용자가 올린 아이템과 색상/재질이 비슷한 코디입니다.
                     visual_sim = (user_features @ cand_features.T).item()
+
+                    # [ADDED] 너무 다른 경우 바로 제거
+                    if visual_sim < 0.30:
+                        return None
 
                     # 4) 세로형 비율 점수
                     ar = img.height / img.width
@@ -424,9 +428,12 @@ async def recommend_image(
                     match_scores = clip_scores(img, subtype_prompts)
                     item_score = max(match_scores)
 
+                    # [ADDED] 아이템 확신도 낮으면 제거
+                    if item_score < ITEM_TOP1_MIN_PROB:
+                        return None
+
                     # 6) textQuery 스타일 점수 추가
                     style_score = 0.0
-
                     if user_q:
                         style_prompts = [
                             f"a full body {user_q} outfit photo",
@@ -436,41 +443,37 @@ async def recommend_image(
                         style_scores = clip_scores(img, style_prompts)
                         style_score = max(style_scores)
 
-                    # margin = top1 - second best
+                    # margin 계산
                     sorted_scores = sorted(match_scores, reverse=True)
                     margin = sorted_scores[0] - sorted_scores[1]
 
-                    # 7) 스코어 계산 가중치 조정
-                    # visual_sim(시각적 유사도)에 높은 비중을 둡니다.
+                    # 7) 스코어 계산
                     score = (
-                        0.40 * visual_sim +      # 사용자가 올린 '그 아이템'과 얼마나 닮았나 (색상, 재질)
-                        0.25 * item_score +      # 텍스트 카테고리(예: '코트')와 일치하나
+                        0.40 * visual_sim +
+                        0.25 * item_score +
                         0.15 * style_score +
-                        0.10 * ar_score +        # 세로 사진인가
-                        0.10 * bbox["person_h"]  # 사람이 크게 찍혔나
+                        0.10 * ar_score +
+                        0.10 * bbox["person_h"]
                     )
 
-                    # 8) 패널티 로직 (기존 유지하되 수치 조정 가능)
+                    # 8) 패널티
                     penalty = 0.0
-                    # 아이템 확신이 너무 낮으면 패널티
-                    if item_score < ITEM_TOP1_MIN_PROB:
-                        penalty += 0.12
-
-                    # 1등-2등 차이가 작으면 패널티 (애매한 분류)
                     if margin < ITEM_MARGIN_MIN:
                         penalty += 0.10
-
-                    # 스타일 반영했는데도 점수가 낮으면 추가 패널티
                     if user_q and style_score < 0.12:
                         penalty += 0.05
-
-                    # 사용자가 올린 아이템과 너무 안 닮으면 패널티
-                    if visual_sim < 0.35:
-                        penalty += 0.10    
+                    if visual_sim < 0.45:
+                        penalty += 0.10
 
                     score -= penalty
 
-                    thumb = it.get("thumbnail") or it.get("link")
+                    # 9) 젠더 점수 기록 (디버그용)
+                    gender_prompts = [
+                        "a full body outfit for man",
+                        "a full body outfit for woman"
+                    ]
+                    gender_scores = clip_scores(img, gender_prompts)
+
                     title = (it.get("title") or "").replace("<b>", "").replace("</b>", "")
 
                     return {
@@ -478,36 +481,35 @@ async def recommend_image(
                         "title": title,
                         "source": "naver",
                         "score": clamp(score, 0, 2),
+                        "genderScore": {
+                            "man": gender_scores[0],
+                            "woman": gender_scores[1]
+                        }
                     }
-                
+
                 except Exception as e:
                     print("process error:", e)
                     return None
 
-
         processed = await asyncio.gather(*[process(it) for it in naver_items])
 
-    # [9]. 결과 정렬 및 반환 (client 블록 밖에서 수행 가능)
+    # [9] 결과 정렬 및 반환
     items = [x for x in processed if x]
     items.sort(key=lambda x: x["score"], reverse=True)
+
+    print(f"{len(items)}장이 나왔습니다.")
+    for i in items:
+        if "genderScore" in i:
+            print("최종 후보 젠더 점수:", i["genderScore"])
 
     top_items = items[:limit]
     for idx, it in enumerate(top_items, start=1):
         it["rank"] = idx
 
-    # [9]. 최종 반환 (with 블록 밖으로 나옴)
     return {
         "requestId": requestId,
         "items": top_items,
-        # "query": korean_query,
-        # "category": category.replace("a photo of ", ""),
-        # "baseLabel": baseLabel,
-        # "targetPrompt": target_prompt,
-        # "rawCount": len(naver_items),
-        # "itemsCount": len(top_items),
     }
-           
 
 # python -m uvicorn main:app --reload
 # python -m uvicorn main:app --host 0.0.0.0 --port 8000 --log-level debug
-
