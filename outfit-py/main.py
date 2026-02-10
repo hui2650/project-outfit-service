@@ -103,6 +103,7 @@ OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 # =========================
 # HARD BLOCK: shop/product domains
 # IMPORTANT:
+
 # - STRICT: block domains early
 # - LOOSE : do NOT domain-block (otherwise candidates die before similarity)
 # =========================
