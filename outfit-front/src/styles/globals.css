@@ -1,0 +1,191 @@
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+@import 'pretendard/dist/web/static/pretendard.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-size: var(--font-base);
+  line-height: var(--line-base);
+  font-family:
+    'Pretendard',
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+}
+
+button {
+  font: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* H (색상) : 270°  → 보라 계열
+   S (채도) : 20%   → 얼마나 선명한지
+   L (명도) : 98%   → 얼마나 밝은지 */
+
+@layer base {
+  :root {
+    /* 배경 */
+    --background: 270 20% 98%;
+
+    /* 텍스트 */
+    --foreground: 270 10% 10%;
+
+    /* 카드 */
+    --card: 0 0% 100%;
+    --card-foreground: 270 10% 10%;
+
+    /* 버튼 (Primary) */
+    --primary: 270 70% 55%;
+    --primary-dis: 270 70% 25%;
+    --primary-foreground: 0 0% 100%;
+
+    /* 보조 영역 (Secondary/Muted) */
+    --secondary: 270 15% 94%;
+    --secondary-foreground: 270 10% 20%;
+    --muted: 270 10% 94%;
+    --muted-foreground: 270 10% 45%;
+
+    /* 강조색 (Accent) */
+    --accent: 280 80% 60%;
+    --accent-foreground: 0 0% 100%;
+
+    /* 위험/삭제/에러 전용 색 */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+
+    /*  테두리 */
+    --border: 270 15% 88%;
+
+    /* 입력창 배경/테두리용 */
+    --input: 270 15% 88%;
+
+    /* 포커스 테두리 효과 */
+    --ring: 270 70% 55%;
+
+    /* UI 색이랑 충돌 안 나게 의도적으로 분리된 색 */
+    --chart-1: 270 70% 55%;
+    --chart-2: 280 65% 60%;
+    --chart-3: 260 60% 50%;
+    --chart-4: 290 55% 65%;
+    --chart-5: 250 50% 55%;
+
+    /* 둥글기 기준값 */
+    --radius: 0.75rem;
+
+    /* 사이드바 (있을 때만) */
+    --sidebar-background: 270 20% 96%;
+    --sidebar-foreground: 270 10% 25%;
+    --sidebar-primary: 270 70% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 270 25% 92%;
+    --sidebar-accent-foreground: 270 10% 20%;
+    --sidebar-border: 270 15% 88%;
+    --sidebar-ring: 270 70% 55%;
+  }
+  .dark {
+    --background: 270 15% 8%;
+    --foreground: 270 5% 95%;
+    --card: 270 15% 12%;
+    --card-foreground: 270 5% 95%;
+    --popover: 270 15% 10%;
+    --popover-foreground: 270 5% 95%;
+    --primary: 270 70% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 270 15% 18%;
+    --secondary-foreground: 270 5% 90%;
+    --muted: 270 15% 18%;
+    --muted-foreground: 270 10% 55%;
+    --accent: 280 80% 65%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62% 35%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 270 15% 20%;
+    --input: 270 15% 20%;
+    --ring: 270 70% 60%;
+    --chart-1: 270 70% 60%;
+    --chart-2: 280 65% 65%;
+    --chart-3: 260 60% 55%;
+    --chart-4: 290 55% 70%;
+    --chart-5: 250 50% 60%;
+    --sidebar-background: 270 15% 10%;
+    --sidebar-foreground: 270 5% 90%;
+    --sidebar-primary: 270 70% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 270 15% 18%;
+    --sidebar-accent-foreground: 270 5% 90%;
+    --sidebar-border: 270 15% 20%;
+    --sidebar-ring: 270 70% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  .slot {
+    opacity: 0;
+    transform-origin: 50% 50%;
+  }
+
+  .slot1 {
+    @apply animate-slot1;
+  }
+  .slot2 {
+    @apply animate-slot2;
+  }
+  .slot3 {
+    @apply animate-slot3;
+  }
+  .slot4 {
+    @apply animate-slot4;
+  }
+  .slot5 {
+    @apply animate-slot5;
+  }
+
+  /* draw용 클래스 추가 */
+  .draw1 {
+    @apply animate-draw1;
+  }
+  .draw2 {
+    @apply animate-draw2;
+  }
+  .draw3 {
+    @apply animate-draw3;
+  }
+  .draw4 {
+    @apply animate-draw4;
+  }
+  .draw5 {
+    @apply animate-draw5;
+  }
+}

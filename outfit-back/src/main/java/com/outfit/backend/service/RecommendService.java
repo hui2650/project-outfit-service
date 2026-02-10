@@ -3,6 +3,7 @@ package com.outfit.backend.service;
 import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
@@ -15,6 +16,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.outfit.backend.dto.RecommendResponseDTO;
+import com.outfit.backend.dto.RecommendItemDTO;
 import com.outfit.backend.entity.RecommendationDetail;
 import com.outfit.backend.entity.RecommendationMaster;
 import com.outfit.backend.persistence.RecommendationRepository;
@@ -81,6 +83,7 @@ public class RecommendService {
         
         // multipart 요청 만들기: headers + body + HttpEntity
         // “내가 지금 multipart/form-data로 보낼 거야” 라고 선언
+        
         HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
 
         // 2. 파이썬 서버 호출
@@ -108,24 +111,34 @@ public class RecommendService {
     	    throw new IllegalStateException("Python response is null");
     	}
     	
-    	// requestId 일관성 강제(파이썬이 echo 안 하면)
-        pythonResponse = new RecommendResponseDTO(requestId, pythonResponse.items());
-        
-        
-        // 3. DB에 결과 저장 (비동기로 처리하면 더 좋지만, 우선은 동기 처리)
-        saveToDatabase(pythonResponse);
+    	// // requestId 일관성 강제(파이썬이 echo 안 하면)
+        // pythonResponse = new RecommendResponseDTO(requestId, pythonResponse.items());
 
+        List<RecommendItemDTO> safeItems =
+        Optional.ofNullable(pythonResponse.items()).orElseGet(List::of);
+
+        pythonResponse = new RecommendResponseDTO(requestId, safeItems);
+
+        // 비어있으면 저장 스킵(선택)
+        // 저장 정책: "요청 로그는 남기되 detail은 비움" or "아예 저장 안 함" 중 택1
+        if (!safeItems.isEmpty()) {
+            saveToDatabase(pythonResponse);
+        }
         return pythonResponse;
+
     }
 
     private void saveToDatabase(RecommendResponseDTO response) {
+        List<RecommendItemDTO> items =
+                Optional.ofNullable(response.items()).orElseGet(List::of);
+
         RecommendationMaster master = new RecommendationMaster(response.requestId());
        // RecommendationMaster를 만든다 = requestId가 저장됨, createdAt 생성됨
         
         // DTO의 items()를 stream으로 돌면서
         //각각을 RecommendationDetail 엔티티로 변환
-        //master(master)로 연결
-        List<RecommendationDetail> details = response.items().stream()
+        // master(master)로 연결
+        List<RecommendationDetail> details = items.stream()
             .map(item -> RecommendationDetail.builder()
                 .master(master)
                 .rankNum(item.rank())

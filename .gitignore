@@ -1,0 +1,30 @@
+# --- OS / IDE ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# --- Front (Vite/React) ---
+outfit-front/node_modules/
+outfit-front/dist/
+outfit-front/.vite/
+outfit-front/.env
+outfit-front/.env.*
+
+# --- Back (Spring/Gradle/Maven) ---
+outfit-back/build/
+outfit-back/target/
+outfit-back/.env
+outfit-back/.env.*
+
+# --- Python/FastAPI ---
+outfit-py/__pycache__/
+outfit-py/.venv/
+outfit-py/.env
+outfit-py/.env.*
+*.pyc
+
+# --- Logs ---
+*.log
+__pycache__/
+*.pyc
