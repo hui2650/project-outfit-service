@@ -80,6 +80,16 @@ FINAL_LIMIT_DEFAULT = int(os.getenv("FINAL_LIMIT_DEFAULT", "8"))
 
 # Speed: cap candidate pool early
 RAW_POOL_LIMIT = int(os.getenv("RAW_POOL_LIMIT", "220"))
+# Speed: search fetch size per source (lower = faster, slightly less recall)
+NAVER_EACH_DEFAULT = int(os.getenv("NAVER_EACH_DEFAULT", "40"))
+KAKAO_EACH_DEFAULT = int(os.getenv("KAKAO_EACH_DEFAULT", "40"))
+
+# Speed: cap how many candidate images we actually download/process (after dedupe)
+PROCESS_POOL_LIMIT = int(os.getenv("PROCESS_POOL_LIMIT", "96"))
+
+# Safety: per-candidate processing timeout (prevents very slow hosts from blocking)
+CANDIDATE_TIMEOUT_SEC = float(os.getenv("CANDIDATE_TIMEOUT_SEC", "18"))
+
 
 # CLIP speed: resize before inference
 CLIP_MAX_SIDE = int(os.getenv("CLIP_MAX_SIDE", "640"))
@@ -154,6 +164,14 @@ def normalize_gender(g: str) -> str:
         return "male"
     if s in ("female", "woman", "f", "w", "여", "여자", "여성"):
         return "female"
+    return ""
+
+def gender_query_kor(gender: str) -> str:
+    g = normalize_gender(gender)
+    if g == "female":
+        return "여성 여자 여자코디 여친룩"
+    if g == "male":
+        return "남성 남자 남자코디 남친룩"
     return ""
 
 def looks_like_image_contenttype(ct: str) -> bool:
@@ -258,7 +276,7 @@ def clip_scores_fast(img: Image.Image, prompts: List[str]) -> List[float]:
     return probs.detach().cpu().tolist()
 
 # ================= COLOR (fast RGB + optional rembg LAB) =================
-COLOR_LABELS = ["black", "white", "gray", "beige", "brown", "navy"]
+COLOR_LABELS = ["black", "white", "gray", "beige", "brown", "navy", "red", "pink", "orange", "yellow", "green", "blue", "purple"]
 COLOR_KOR = {
     "beige": "베이지",
     "black": "검정",
@@ -266,6 +284,13 @@ COLOR_KOR = {
     "navy": "네이비",
     "gray": "회색",
     "brown": "브라운",
+    "red": "빨강",
+    "pink": "핑크",
+    "orange": "오렌지",
+    "yellow": "노랑",
+    "green": "초록",
+    "blue": "파랑",
+    "purple": "보라",
 }
 
 FAST_RGB_PROTOS = {
@@ -275,8 +300,15 @@ FAST_RGB_PROTOS = {
     "beige": np.array([210, 190, 155], dtype=np.float32),
     "brown": np.array([120, 85, 55], dtype=np.float32),
     "navy": np.array([25, 40, 85], dtype=np.float32),
+    # vivid colors
+    "red": np.array([210, 50, 60], dtype=np.float32),
+    "pink": np.array([235, 120, 160], dtype=np.float32),
+    "orange": np.array([235, 140, 60], dtype=np.float32),
+    "yellow": np.array([235, 210, 70], dtype=np.float32),
+    "green": np.array([60, 165, 85], dtype=np.float32),
+    "blue": np.array([70, 120, 210], dtype=np.float32),
+    "purple": np.array([155, 90, 200], dtype=np.float32),
 }
-
 def rgb_to_lab_image(img_rgb: Image.Image) -> np.ndarray:
     lab = img_rgb.convert("LAB")
     return np.asarray(lab, dtype=np.float32)
@@ -299,6 +331,68 @@ def fast_rgb_color(img_rgb: Image.Image) -> Tuple[str, float]:
     conf = float(clamp(1.0 - dists[best] / 120.0, 0.0, 1.0))
     return best, conf
 
+
+def _rgb_to_hsv_np(arr_rgb: np.ndarray) -> np.ndarray:
+    """arr_rgb: (...,3) in 0..1 -> hsv (...,3) in 0..1"""
+    r, g, b = arr_rgb[..., 0], arr_rgb[..., 1], arr_rgb[..., 2]
+    mx = np.maximum(np.maximum(r, g), b)
+    mn = np.minimum(np.minimum(r, g), b)
+    diff = mx - mn
+
+    # Hue
+    h = np.zeros_like(mx)
+    mask = diff > 1e-6
+    # red is max
+    idx = (mx == r) & mask
+    h[idx] = ((g[idx] - b[idx]) / diff[idx]) % 6.0
+    idx = (mx == g) & mask
+    h[idx] = ((b[idx] - r[idx]) / diff[idx]) + 2.0
+    idx = (mx == b) & mask
+    h[idx] = ((r[idx] - g[idx]) / diff[idx]) + 4.0
+    h = (h / 6.0) % 1.0
+
+    # Sat
+    s = np.zeros_like(mx)
+    s[mx > 1e-6] = diff[mx > 1e-6] / mx[mx > 1e-6]
+
+    v = mx
+    return np.stack([h, s, v], axis=-1)
+
+def hsv_color_guess(img_rgb: Image.Image) -> Tuple[str, float]:
+    """Fast, robust guess for vivid colors using HSV on center crop.
+    Returns (label, conf). Conf is driven by saturation.
+    """
+    img2 = center_square_crop(img_rgb, 0.75)
+    arr = np.asarray(img2, dtype=np.float32) / 255.0
+    hsv = _rgb_to_hsv_np(arr.reshape(-1, 3))
+    h = np.median(hsv[:, 0])
+    s = float(np.median(hsv[:, 1]))
+    v = float(np.median(hsv[:, 2]))
+
+    # very low saturation -> let LAB/prototypes decide (neutral)
+    if s < 0.22:
+        return "", 0.0
+
+    # hue buckets (0..1)
+    # red wraps: [0,0.04] U [0.96,1]
+    if h <= 0.04 or h >= 0.96:
+        # distinguish pink vs red by brightness
+        if v >= 0.72 and s <= 0.65:
+            return "pink", float(clamp((s - 0.22) / 0.60, 0.0, 1.0))
+        return "red", float(clamp((s - 0.22) / 0.60, 0.0, 1.0))
+    if 0.04 < h <= 0.10:
+        return "orange", float(clamp((s - 0.22) / 0.60, 0.0, 1.0))
+    if 0.10 < h <= 0.18:
+        return "yellow", float(clamp((s - 0.22) / 0.60, 0.0, 1.0))
+    if 0.18 < h <= 0.43:
+        return "green", float(clamp((s - 0.22) / 0.60, 0.0, 1.0))
+    if 0.43 < h <= 0.69:
+        return "blue", float(clamp((s - 0.22) / 0.60, 0.0, 1.0))
+    if 0.69 < h <= 0.90:
+        return "purple", float(clamp((s - 0.22) / 0.60, 0.0, 1.0))
+    # 0.90..0.96 -> pink-ish
+    return "pink", float(clamp((s - 0.22) / 0.60, 0.0, 1.0))
+
 def rembg_alpha(img_rgb: Image.Image) -> np.ndarray:
     if not REMBG_OK:
         raise RuntimeError("rembg not available")
@@ -310,7 +404,10 @@ def rembg_alpha(img_rgb: Image.Image) -> np.ndarray:
     return alpha
 
 def dominant_color_label_rembg_lab(img_rgb: Image.Image) -> Tuple[str, float]:
-    """Accurate color (best): rembg fg median in LAB -> prototype distance (fallback to fast)."""
+    """Accurate color: prefer HSV for vivid colors, else rembg fg median in LAB -> prototype distance."""
+    guess, gconf = hsv_color_guess(img_rgb)
+    if guess:
+        return guess, max(gconf, 0.35)
     if not REMBG_OK:
         return fast_rgb_color(img_rgb)
     try:
@@ -716,15 +813,35 @@ def item_presence_prompts(item_en: str, user_color: str, distractors: List[str])
     return targets + bads + dist
 
 def gender_prompts() -> Tuple[List[str], List[str]]:
+    """Text prompts for gender gating.
+
+    NOTE: Coats/trench are often gender-neutral in clothing cues, so we include
+    Korean + English prompts and later score on (1) full image, (2) person crop,
+    and (3) head/upper crop for better signal.
+    """
     male = [
+        # EN
         "a full body street fashion outfit photo of a man",
         "a man wearing a street style outfit",
+        "a male model in a street fashion outfit",
         "menswear outfit full body photo",
+        # KR
+        "남자 전신 코디 착샷",
+        "남성 스트릿룩 전신",
+        "남자 코트 코디 전신 착샷",
+        "남자 데일리룩 전신 착용샷",
     ]
     female = [
+        # EN
         "a full body street fashion outfit photo of a woman",
         "a woman wearing a street style outfit",
+        "a female model in a street fashion outfit",
         "womenswear outfit full body photo",
+        # KR
+        "여자 전신 코디 착샷",
+        "여성 스트릿룩 전신",
+        "여자 코트 코디 전신 착샷",
+        "여자 데일리룩 전신 착용샷",
     ]
     return male, female
 
@@ -733,6 +850,7 @@ async def run_anyitem_pipeline(
     *,
     user_img: Image.Image,
     user_q: str,
+    gender_kor: str,
     limit: int,
     source_request_id: str,
 ) -> Dict[str, Any]:
@@ -775,13 +893,16 @@ async def run_anyitem_pipeline(
     color_kor = COLOR_KOR.get(user_color, "")
     item_kor = item_kr_list[0] if item_kr_list else "패션"
 
-    q1 = f"{color_kor} {item_kor} 전신 착샷 코디 룩북 무신사 스냅 OOTD 착용 {user_q}".strip()
-    q2 = f"{color_kor} {item_kor} 데일리룩 스트릿 스냅 전신 코디 착용 {user_q}".strip()
-    q3 = f"{item_kor} 전신 코디 착샷 룩북 무신사 스냅 착용 {user_q}".strip()
-    q4 = f"{item_kor} 코디 전신 OOTD 스트릿룩 착용 {user_q}".strip()
+    q1 = f"{gender_kor} {color_kor} {item_kor} 전신 착샷 코디 룩북 무신사 스냅 OOTD 착용 {user_q}".strip()
+    q2 = f"{gender_kor} {color_kor} {item_kor} 데일리룩 스트릿 스냅 전신 코디 착용 {user_q}".strip()
+    q3 = f"{gender_kor} {item_kor} 전신 코디 착샷 룩북 무신사 스냅 착용 {user_q}".strip()
+    q4 = f"{gender_kor} {item_kor} 코디 전신 OOTD 스트릿룩 착용 {user_q}".strip()
     queries = [q1, q2, q3, q4]
 
-    candidates = await search_multi_sources(queries, naver_each=80, kakao_each=80)
+    candidates = await search_multi_sources(queries, naver_each=NAVER_EACH_DEFAULT, kakao_each=KAKAO_EACH_DEFAULT)
+    # Speed: don't process an excessively large pool
+    cand_limit = min(len(candidates), max(int(limit) * 12, PROCESS_POOL_LIMIT))
+    candidates = candidates[:cand_limit]
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
 
     async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
@@ -793,6 +914,11 @@ async def run_anyitem_pipeline(
                         url = it.get("link")
                         if not url:
                             await drop("no_url"); return None
+
+                        # Hard URL/product patterns (catalog images) -> not true outfit photos
+                        low_url = url.lower()
+                        if ("prd_img" in low_url) or ("/prd_img/" in low_url):
+                            await drop("screenshot_or_product"); return None
 
                         r = await client.get(url)
                         if r.status_code != 200:
@@ -1002,6 +1128,7 @@ async def run_anyitem_pipeline(
                 "item_prob": round(best_prob, 4),
                 "user_color": user_color,
                 "user_color_conf": round(float(user_color_conf), 4),
+                "gender": gender_norm,
                 "queries": queries,
                 "sources": {"naver": ("naver" in SEARCH_SOURCES), "kakao": ("kakao" in SEARCH_SOURCES and bool(KAKAO_REST_API_KEY))},
                 "part": item_part,
@@ -1056,6 +1183,14 @@ async def run_strictloose_wrapper(
     if not user_color:
         user_color, user_color_conf = dominant_color_label_rembg_lab(center_square_crop(item_img, 0.85))
         warnings.append(f"Color inferred from item image: {user_color} (conf={user_color_conf:.2f})")
+        # If color inference is unreliable, do NOT force a potentially wrong color into search query.
+        # Keep gates working: we will allow non-strict / compat-only color behavior later.
+        if (not user_color_raw) and (user_color_conf < COLOR_STRICT_IF_CONF_GE):
+            warnings.append(
+                f"Color inference low (conf={user_color_conf:.2f}) -> not injecting color into query; disable strict color gating."
+            )
+            user_color = ""
+
     else:
         user_color_conf = 1.0
         warnings.append(f"Color provided: {user_color}")
@@ -1068,7 +1203,11 @@ async def run_strictloose_wrapper(
     q4 = f"{item_kr} 코디 전신 OOTD 스트릿룩 착용 {user_q}".strip()
     queries = [q1, q2, q3, q4]
 
-    candidates = await search_multi_sources(queries, naver_each=80, kakao_each=80)
+    candidates = await search_multi_sources(queries, naver_each=NAVER_EACH_DEFAULT, kakao_each=KAKAO_EACH_DEFAULT)
+    # Speed: don't process an excessively large pool
+    cand_limit = min(len(candidates), max(int(limit or FINAL_LIMIT_DEFAULT) * 12, PROCESS_POOL_LIMIT))
+    candidates = candidates[:cand_limit]
+
 
     # Features from item image (same logic)
     user_item_features = get_img_features(center_square_crop(item_img, 0.85))
@@ -1193,18 +1332,41 @@ async def run_strictloose_wrapper(
                         cand_item_features = get_img_features(best_crop)
                         visual_sim = float((user_item_features @ cand_item_features.T).item())
 
-                        # gender soft filter
+                        # gender soft filter (only when user explicitly selected gender)
                         gender_bonus = 0.0
                         male_s = female_s = 0.0
                         if use_gender:
+                            # 1) score on full image
                             male_s = float(max(clip_scores_fast(img, male_prompts)))
                             female_s = float(max(clip_scores_fast(img, female_prompts)))
+
+                            # 2) score on person crop (stronger than background)
+                            try:
+                                male_s = max(male_s, float(max(clip_scores_fast(person_crop, male_prompts))))
+                                female_s = max(female_s, float(max(clip_scores_fast(person_crop, female_prompts))))
+                            except Exception:
+                                pass
+
+                            # 3) score on head/upper crop (best for gender-neutral items like coats)
+                            try:
+                                w, h = person_crop.size
+                                # head+upper body region (top ~55%)
+                                upper = person_crop.crop((0, 0, w, max(1, int(h * 0.55))))
+                                male_s = max(male_s, float(max(clip_scores_fast(upper, male_prompts))))
+                                female_s = max(female_s, float(max(clip_scores_fast(upper, female_prompts))))
+                            except Exception:
+                                pass
+
+                            # Hard-ish gate: require margin in the requested direction.
+                            # (Still "logic-preserving": only strengthens the existing gender filter.)
+                            margin_req = (GENDER_MARGIN_DEFAULT if mode == "STRICT" else max(0.0, GENDER_MARGIN_DEFAULT - 0.02))
+
                             if gender == "male":
-                                if (male_s - female_s) < (GENDER_MARGIN_DEFAULT if mode == "STRICT" else max(0.0, GENDER_MARGIN_DEFAULT - 0.02)):
+                                if (male_s - female_s) < margin_req:
                                     await drop("gender_fail"); return None
                                 gender_bonus = max(0.0, male_s - female_s)
                             else:
-                                if (female_s - male_s) < (GENDER_MARGIN_DEFAULT if mode == "STRICT" else max(0.0, GENDER_MARGIN_DEFAULT - 0.02)):
+                                if (female_s - male_s) < margin_req:
                                     await drop("gender_fail"); return None
                                 gender_bonus = max(0.0, female_s - male_s)
 
@@ -1268,12 +1430,29 @@ async def run_strictloose_wrapper(
 
     ok_items, drop_strict = await run_mode("STRICT")
     gate_used = "strict"
-    if len(ok_items) == 0:
-        gate_used = "loose"
-        warnings.append("No results in STRICT -> fallback to LOOSE.")
-        ok_items, drop_loose = await run_mode("LOOSE")
-    else:
-        drop_loose = {}
+    drop_loose = {}
+
+    # If STRICT doesn't produce enough results, run LOOSE to fill up to `limit` (without changing core ranking logic).
+    if len(ok_items) < int(limit or FINAL_LIMIT_DEFAULT):
+        gate_used = "loose" if len(ok_items) == 0 else "strict+loose"
+        if len(ok_items) == 0:
+            warnings.append("No results in STRICT -> fallback to LOOSE.")
+        else:
+            warnings.append(f"STRICT returned {len(ok_items)} < limit -> topping up with LOOSE candidates.")
+        loose_items, drop_loose = await run_mode("LOOSE")
+        # Merge, dedupe by image link
+        seen = {x.get('link') for x in ok_items if x}
+        for x in loose_items:
+            if not x:
+                continue
+            lk = x.get('link')
+            if lk and lk in seen:
+                continue
+            ok_items.append(x)
+            if lk:
+                seen.add(lk)
+            if len(ok_items) >= int(limit or FINAL_LIMIT_DEFAULT) * 3:
+                break
 
     ok_items.sort(key=lambda x: x.get("rankScore", 0.0), reverse=True)
     items_out = []
@@ -1334,12 +1513,15 @@ async def recommend_image_anyitem(
     limit: int = Form(FINAL_LIMIT_DEFAULT),
     requestId: str = Form(...),
     textQuery: str = Form(""),
+    gender: str = Form(""),
 ):
     if not (NAVER_CLIENT_ID and NAVER_CLIENT_SECRET) and ("naver" in SEARCH_SOURCES):
         return {"error": "NAVER_CLIENT_ID/SECRET 없음"}
     user_img = pil_rgb(await image.read())
     user_q = (textQuery or "").strip()
-    out = await run_anyitem_pipeline(user_img=user_img, user_q=user_q, limit=int(limit), source_request_id=requestId)
+    gender_norm = normalize_gender(gender)
+    gender_kor = gender_query_kor(gender_norm)
+    out = await run_anyitem_pipeline(user_img=user_img, user_q=user_q, gender_kor=gender_kor, limit=int(limit), source_request_id=requestId)
     return out
 
 # =========================
