@@ -26,17 +26,17 @@ const ResultStage = ({ chatLogs, onSelectItem, onSendChat, chatDisabled }) => {
   }
 
   return (
-    <div className="h-full flex flex-col relative overflow-hidden">
+    <div className="flex flex-col relative overflow-hidden">
       {/* ✅ 스크롤 영역: flex-1로 남는 공간 다 차지함 */}
       <div
         className={`flex-1 px-4 ${
           isOnlyLoading
             ? "overflow-hidden"
-            : "overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] mb-[140px]"
+            : "overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] pb-[140px]"
         }`}
         style={{ scrollbarGutter: "stable" }}
       >
-        <div className="w-full h-full max-w-none lg:max-w-7xl mx-auto">
+        <div className="w-full max-w-none lg:max-w-7xl mx-auto ">
           {chatLogs.map((turn) => (
             <Turn key={turn.id} turn={turn} onSelectItem={onSelectItem} />
           ))}
