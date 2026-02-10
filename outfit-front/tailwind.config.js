@@ -1,13 +1,8 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-<<<<<<< HEAD
-  content: ["./index.html", "./src/**/*.{js,jsx,ts,tsx}"],
-  safelist: ["bg-primary-dis", "text-primary-foreground", "animate-emojiFall"],
-=======
   darkMode: 'class',
   content: ['./index.html', './src/**/*.{js,jsx,ts,tsx}'],
   safelist: ['bg-primary-dis', 'text-primary-foreground', 'animate-emojiFall'],
->>>>>>> feature/taehui/default-uI
   theme: {
     extend: {
       fontFamily: {
@@ -59,27 +54,32 @@ export default {
       borderRadius: {
         lg: 'var(--radius)',
       },
+
+      // ✅ keyframes 한 번만
       keyframes: {
         slotShow: {
           '0%': { opacity: '0', transform: 'scale(0.95)' },
           '2%': { opacity: '1', transform: 'scale(1)' },
           '16%': { opacity: '1', transform: 'scale(1)' },
-          '20%': { opacity: '0', transform: 'scale(0.95)' }, // 다음 옷 나오기 전 퇴장
+          '20%': { opacity: '0', transform: 'scale(0.95)' },
           '100%': { opacity: '0' },
         },
-
         drawLoop: {
           '0%': { strokeDashoffset: '520' },
           '2%': { strokeDashoffset: '520' },
           '15%': { strokeDashoffset: '0' },
           '16.5%': { strokeDashoffset: '0' },
-          '20%': { strokeDashoffset: '520' }, // 리셋
+          '20%': { strokeDashoffset: '520' },
           '100%': { strokeDashoffset: '520' },
+        },
+        emojiFall: {
+          '0%': { transform: 'translateY(-10%)', opacity: '1' },
+          '100%': { transform: 'translateY(110vh)', opacity: '0' },
         },
       },
 
+      // ✅ animation 한 번만
       animation: {
-        // 전체 10초 사이클, 아이콘당 2초씩 배정
         slot1: 'slotShow 10s ease-in-out 0s infinite both',
         slot2: 'slotShow 10s ease-in-out 2s infinite both',
         slot3: 'slotShow 10s ease-in-out 4s infinite both',
@@ -91,15 +91,8 @@ export default {
         draw3: 'drawLoop 10s ease-in-out 4s infinite both',
         draw4: 'drawLoop 10s ease-in-out 6s infinite both',
         draw5: 'drawLoop 10s ease-in-out 8s infinite both',
-      },
-      keyframes: {
-        emojiFall: {
-          "0%": { transform: "translateY(-10%)", opacity: 1 },
-          "100%": { transform: "translateY(110vh)", opacity: 0 },
-        },
-      },
-      animation: {
-        emojiFall: "emojiFall 3s linear infinite",
+
+        emojiFall: 'emojiFall 3s linear infinite',
       },
     },
   },
