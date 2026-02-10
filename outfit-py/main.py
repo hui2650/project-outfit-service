@@ -438,6 +438,37 @@ def center_square_crop(img: Image.Image, ratio: float = 0.85) -> Image.Image:
     y2 = y1 + side
     return safe_crop(img, x1, y1, x2, y2)
 
+def ensure_tensor_features(x) -> torch.Tensor:
+    """
+    CLIP 관련 함수들이 버전에 따라 Tensor / BaseModelOutput / dict 등을 반환할 수 있음.
+    최종적으로 (1, d) Tensor로 뽑아내기.
+    """
+    # 이미 텐서면 그대로
+    if torch.is_tensor(x):
+        return x
+
+    # transformers 출력 객체: pooler_output / image_embeds / text_embeds / last_hidden_state 등 케이스 대응
+    if hasattr(x, "image_embeds") and torch.is_tensor(x.image_embeds):
+        return x.image_embeds
+    if hasattr(x, "text_embeds") and torch.is_tensor(x.text_embeds):
+        return x.text_embeds
+    if hasattr(x, "pooler_output") and torch.is_tensor(x.pooler_output):
+        return x.pooler_output
+    if hasattr(x, "last_hidden_state") and torch.is_tensor(x.last_hidden_state):
+        # 마지막 hidden state면 CLS 토큰(0번) 같은 대표 벡터 사용
+        return x.last_hidden_state[:, 0, :]
+
+    # dict 형태
+    if isinstance(x, dict):
+        for k in ("image_embeds", "text_embeds", "pooler_output", "last_hidden_state"):
+            if k in x and torch.is_tensor(x[k]):
+                t = x[k]
+                if k == "last_hidden_state":
+                    t = t[:, 0, :]
+                return t
+
+    raise TypeError(f"Cannot convert to tensor features. type={type(x)}")
+
 
 # ================= CLIP =================
 @torch.no_grad()
@@ -461,12 +492,29 @@ def resize_max_side(img: Image.Image, max_side: int) -> Image.Image:
 
 @torch.no_grad()
 def get_img_features(img: Image.Image) -> torch.Tensor:
-    # ✅ speed: resize before CLIP (keeps aspect ratio)
     img = resize_max_side(img, CLIP_MAX_SIDE)
 
     inp = clip_processor(images=img, return_tensors="pt")
     pixel_values = inp["pixel_values"].to(device)
 
+    # 1) 우선 get_image_features 시도
+    try:
+        feats = clip_model.get_image_features(pixel_values=pixel_values)
+    except Exception:
+        feats = None
+
+    # 2) 어떤 타입이든 텐서로 강제
+    if feats is None:
+        vision_out = clip_model.vision_model(pixel_values=pixel_values)
+        pooled = ensure_tensor_features(vision_out)  # pooler_output 등에서 텐서 뽑기
+        feats = clip_model.visual_projection(pooled)
+    else:
+        feats = ensure_tensor_features(feats)
+
+        # 만약 feats가 pooler_output(768) 같은 걸로 들어오면 projection 필요
+        # (버전에 따라 get_image_features가 projection 전 벡터를 줄 수도 있어서 안전하게 처리)
+        if feats.shape[-1] != clip_model.projection_dim:
+            feats = clip_model.visual_projection(feats)
 
 @torch.inference_mode()
 def _to_tensor(x):
@@ -497,6 +545,7 @@ def _clip_text_features(texts: List[str]) -> torch.Tensor:
     feats = _to_tensor(out)
     feats = feats / feats.norm(dim=-1, keepdim=True)
     return feats
+
 
 # ================= CLIP FAST (cached text embeddings) =================
 _TEXT_TOK_CACHE: Dict[str, Dict[str, torch.Tensor]] = {}
@@ -529,14 +578,21 @@ def get_text_features_cached(prompt: str) -> torch.Tensor:
     try:
         tf = clip_model.get_text_features(**tok)
     except Exception:
-        # fallback
+        tf = None
+
+    if tf is None:
         text_out = clip_model.text_model(**tok)
-        pooled = text_out.pooler_output
+        pooled = ensure_tensor_features(text_out)
         tf = clip_model.text_projection(pooled)
+    else:
+        tf = ensure_tensor_features(tf)
+        if tf.shape[-1] != clip_model.projection_dim:
+            tf = clip_model.text_projection(tf)
 
     tf = tf / tf.norm(dim=-1, keepdim=True)
     _TEXT_FEAT_CACHE[p] = tf
     return tf
+
 
 @torch.no_grad()
 def clip_scores_fast(img: Image.Image, prompts: List[str]) -> List[float]:
@@ -1281,41 +1337,6 @@ async def search_multi_sources(queries: List[str]) -> List[Dict[str, Any]]:
     return all_items[:RAW_POOL_LIMIT]
 
 
-# =========================
-# YOLO PERSON DETECT
-# =========================
-
-def detect_person_boxes(img: Image.Image) -> List[Tuple[float, float, float, float, float]]:
-    """
-    Returns list of (x1,y1,x2,y2,conf) in normalized coordinates [0..1]
-    """
-    arr = np.asarray(img)
-    res = yolo_model.predict(arr, verbose=False, conf=0.25)
-    if not res or len(res) == 0:
-        return []
-
-    r0 = res[0]
-    if r0.boxes is None:
-        return []
-
-    boxes = r0.boxes
-    xyxy = boxes.xyxy.cpu().numpy()
-    conf = boxes.conf.cpu().numpy()
-    cls = boxes.cls.cpu().numpy()
-
-    w, h = img.size
-    out = []
-    for (x1, y1, x2, y2), c, k in zip(xyxy, conf, cls):
-        if int(k) != 0:
-            continue
-        x1n = float(max(0.0, min(1.0, x1 / w)))
-        x2n = float(max(0.0, min(1.0, x2 / w)))
-        y1n = float(max(0.0, min(1.0, y1 / h)))
-        y2n = float(max(0.0, min(1.0, y2 / h)))
-        out.append((x1n, y1n, x2n, y2n, float(c)))
-
-    out.sort(key=lambda b: (b[2]-b[0])*(b[3]-b[1]), reverse=True)
-    return out
 
 def yolo_has_any(img: Image.Image, wanted_names: List[str]) -> bool:
     if not wanted_names:

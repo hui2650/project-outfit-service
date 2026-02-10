@@ -1,4 +1,4 @@
-import { uid } from './uid.js'
+import { uid } from "./uid.js";
 
 /**
  * createTurn({ file, previewUrl, textQuery, category, gender })
@@ -41,7 +41,7 @@ export const createTurn = ({
      * - 예: "turn_1700000000000"
      * - server requestId와 역할이 다름 (이건 UI용)
      */
-    id: 'turn_' + Date.now(),
+    id: "turn_" + Date.now(),
     /**
      * requestId (서버 생성)
      * - 서버에서 요청을 식별하는 값
@@ -73,7 +73,7 @@ export const createTurn = ({
      * - 'done': 정상 응답 받아서 결과 렌더 가능
      * - 'error': 요청 실패(네트워크/서버에러)
      */
-    status: 'loading',
+    status: "loading",
     /**
      * error 객체
      * - status가 error일 때만 채움
@@ -95,11 +95,11 @@ export const createTurn = ({
     messages: [
       {
         id: uid(),
-        role: 'user',
-        type: 'input',
+        role: "user",
+        type: "input",
         previewUrl, // UserInputPreview에서 이미지 미리보기로 사용
         text: textQuery, // UserInputPreview에서 텍스트 미리보기로 사용
       },
     ],
-  }
-}
+  };
+};
