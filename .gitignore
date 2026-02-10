@@ -26,3 +26,5 @@ outfit-py/.env.*
 
 # --- Logs ---
 *.log
+__pycache__/
+*.pyc

@@ -341,8 +341,10 @@ def yolo_best_person_bbox(img: Image.Image) -> Tuple[Optional[Tuple[float, float
     r = yolo_person.predict(img, verbose=False)[0]
     if r.boxes is None or len(r.boxes) == 0:
         return None, 0
+
     boxes = r.boxes.xyxy.cpu().numpy()
     cls = r.boxes.cls.cpu().numpy()
+
     persons = [i for i, c in enumerate(cls) if int(c) == 0]
     if not persons:
         return None, 0
@@ -378,6 +380,7 @@ def bbox_fullbody_and_feet(img: Image.Image) -> Tuple[bool, Dict[str, Any]]:
         "person_count": int(person_count),
         "bbox": [float(x1), float(y1), float(x2), float(y2)],
     }
+
 
 def pose_fullbody_gate(img: Image.Image) -> Tuple[bool, Dict[str, Any]]:
     w, h = img.size
@@ -628,13 +631,11 @@ async def search_multi_sources(queries: List[str]) -> List[Dict[str, Any]]:
     all_items = merge_dedupe(all_items)
     return all_items[:RAW_POOL_LIMIT]
 
-# ================= OPTIONAL YOLO OBJECT GATE =================
-YOLO_NAMES = yolo_person.model.names if hasattr(yolo_person, "model") and hasattr(yolo_person.model, "names") else {}
+
 
 def yolo_has_any(img: Image.Image, wanted_names: List[str]) -> bool:
     if not wanted_names:
         return True
-    r = yolo_person.predict(img, verbose=False)[0]
     if r.boxes is None or len(r.boxes) == 0:
         return False
     cls = r.boxes.cls.cpu().numpy().astype(int).tolist()
@@ -1003,3 +1004,5 @@ async def recommend_image(
 # 실행:
 # python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000 --log-level debug
 # pip install rembg onnxruntime
+# cd C:\project-outfit-service\outfit-py
+# C:\Users\user\anaconda3\envs\class1\python.exe -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
