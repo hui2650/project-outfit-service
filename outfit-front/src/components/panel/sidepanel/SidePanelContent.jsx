@@ -22,7 +22,7 @@ const SidePanelContent = ({
   const pickFile = () => inputRef.current?.click();
 
   return (
-    <div className="p-8 flex-1 overflow-y-auto">
+    <div className="bg-card/90 p-8 flex-1 overflow-y-auto">
       <UploadDropzone
         previewUrl={previewUrl}
         onFile={onFile}

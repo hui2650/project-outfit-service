@@ -11,7 +11,7 @@ const Turn = ({ turn, onSelectItem }) => {
      =============================== */
   if (turn.status === "loading") {
     return (
-      <div className="w-full h-[calc(100vh-3.5rem)] min-h-[240px] flex items-center justify-center">
+      <div className="w-full h-[calc(100vh-54px)] flex-1 flex items-center justify-center">
         <OutfitLoadingMark />
       </div>
     );

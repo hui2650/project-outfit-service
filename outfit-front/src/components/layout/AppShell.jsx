@@ -12,7 +12,7 @@ const AppShell = ({ left, right }) => {
       {!panelCollapsed && (
         <div
           className={[
-            "fixed inset-0 z-10 bg-black/40 backdrop-blur-[0.5px]",
+            "fixed inset-0 z-20 bg-black/40 backdrop-blur-[0.5px]",
             "hidden max-lg:block", // ✅ 768px 포함해서 보여줌
           ].join(" ")}
           onClick={() => setPanelCollapsed(true)}

@@ -8,6 +8,8 @@ import { useRecommend } from "../hooks/useRecommend";
 import { createTurn } from "../utils/createTurn";
 import { useInputOptions } from "../hooks/useInputOptions";
 import { useAppData } from "../store/appDataStore.jsx";
+import { useFollowupChat } from "../hooks/useFollowupChat";
+
 const Home = () => {
   const { file, previewUrl, handleFile, setFile } = useFileInput();
   const { chatLogs, appendTurn, updateTurn } = useChatLogs();
@@ -50,10 +52,51 @@ const Home = () => {
     setFile(null);
     reset();
   };
+
+  const { sendChat } = useFollowupChat({ updateTurn });
+
+  const latestDoneTurn = React.useMemo(() => {
+    // 가장 최근 done 찾기
+    for (let i = chatLogs.length - 1; i >= 0; i--) {
+      if (chatLogs[i].status === "done") return chatLogs[i];
+    }
+    return null;
+  }, [chatLogs]);
+
+  const chatDisabled = !latestDoneTurn;
+
+  const handleSendChat = async (text) => {
+    if (!latestDoneTurn) return;
+
+    // 이 turn에 붙일 컨텍스트: requestId, items, category/gender(있으면)
+    const requestId = latestDoneTurn.requestId ?? null;
+
+    // carousel 메시지에서 items 뽑기 (없으면 빈 배열)
+    const carouselMsg = [...latestDoneTurn.messages]
+      .reverse()
+      .find((m) => m.type === "carousel");
+    const items = carouselMsg?.items ?? [];
+
+    await sendChat({
+      turnId: latestDoneTurn.id,
+      text,
+      requestId,
+      items,
+      category,
+      gender,
+    });
+  };
+
   return (
     <>
       <AppShell
-        left={<ResultStage chatLogs={chatLogs} />}
+        left={
+          <ResultStage
+            chatLogs={chatLogs}
+            onSendChat={handleSendChat}
+            chatDisabled={chatDisabled}
+          />
+        }
         right={
           <SidePanel
             file={file}

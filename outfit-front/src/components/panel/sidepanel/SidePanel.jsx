@@ -27,8 +27,7 @@ const SidePanel = ({
   return (
     <aside
       className={[
-        "h-full shrink-0 z-10 overflow-hidden",
-
+        "h-full shrink-0 z-30 overflow-hidden bg-card/90",
         // 📱 모바일 기본 (md 미만)
         collapsed
           ? "relative w-[72px]"
@@ -36,9 +35,6 @@ const SidePanel = ({
         // 💻 md 이상에서 정상 레이아웃 복구
         "lg:relative lg:h-full",
         collapsed ? "lg:w-[72px]" : "lg:w-[380px]",
-
-        "bg-card/50 backdrop-blur-md",
-        "transition-[width] duration-300 ease-in-out",
       ].join(" ")}
     >
       {collapsed && (
