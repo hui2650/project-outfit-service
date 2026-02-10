@@ -1,21 +1,21 @@
-import React from "react";
+import React from 'react'
 
-import { useNavigate, useLocation } from "react-router-dom";
-import ConfirmModal from "./ConfirmModal";
+import { useNavigate, useLocation } from 'react-router-dom'
+import ConfirmModal from './ConfirmModal'
 
-const UserButton = ({ to = "/user", confirmBeforeNav = true }) => {
-  const navigate = useNavigate();
-  const location = useLocation();
+const UserButton = ({ to = '/userpage', confirmBeforeNav = true }) => {
+  const navigate = useNavigate()
+  const location = useLocation()
 
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = React.useState(false)
 
-  const go = () => navigate(to);
+  const go = () => navigate(to)
 
   const onClick = () => {
-    if (location.pathname === to) return;
-    if (!confirmBeforeNav) return go();
-    setOpen(true);
-  };
+    if (location.pathname === to) return
+    if (!confirmBeforeNav) return go()
+    setOpen(true)
+  }
 
   return (
     <>
@@ -53,7 +53,7 @@ const UserButton = ({ to = "/user", confirmBeforeNav = true }) => {
         onConfirm={go}
       />
     </>
-  );
-};
+  )
+}
 
-export default UserButton;
+export default UserButton

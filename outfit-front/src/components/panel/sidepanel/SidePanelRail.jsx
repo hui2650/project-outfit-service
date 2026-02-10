@@ -1,5 +1,5 @@
-import React from "react";
-import UserButton from "../../common/UserButton";
+import React from 'react'
+import UserButton from '../../common/UserButton'
 
 const SidePanelRail = ({ collapsed, onToggle }) => {
   return (
@@ -9,8 +9,8 @@ const SidePanelRail = ({ collapsed, onToggle }) => {
         type="button"
         onClick={onToggle}
         className="h-10 w-10 rounded-xl border border-border bg-card hover:bg-muted flex items-center justify-center"
-        aria-label={collapsed ? "Open side panel" : "Collapse side panel"}
-        title={collapsed ? "열기" : "접기"}
+        aria-label={collapsed ? 'Open side panel' : 'Collapse side panel'}
+        title={collapsed ? '열기' : '접기'}
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -31,9 +31,9 @@ const SidePanelRail = ({ collapsed, onToggle }) => {
       </button>
 
       {/* 사용자 */}
-      <UserButton to="/user" confirmBeforeNav={false} />
+      <UserButton to="/userpage" confirmBeforeNav={false} />
     </div>
-  );
-};
+  )
+}
 
-export default SidePanelRail;
+export default SidePanelRail

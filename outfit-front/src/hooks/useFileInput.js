@@ -48,6 +48,11 @@ export const useFileInput = () => {
     setPreviewUrl(URL.createObjectURL(f))
   }
 
+  const clear = () => {
+    setFile(null)
+    setPreviewUrl(null)
+  }
+
   /**
    * previewUrl cleanup
    *
@@ -59,8 +64,10 @@ export const useFileInput = () => {
    * - revoke를 안 하면 파일을 계속 바꿀 때 blob URL이 누수처럼 쌓일 수 있음
    */
   useEffect(() => {
+    if (!previewUrl) return
+
     return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl)
+      URL.revokeObjectURL(previewUrl)
     }
   }, [previewUrl])
 
@@ -69,5 +76,6 @@ export const useFileInput = () => {
     previewUrl,
     setFile,
     handleFile,
+    clear,
   }
 }

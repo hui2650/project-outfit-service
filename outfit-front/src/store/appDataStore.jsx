@@ -1,49 +1,49 @@
-import React from "react";
+import React from 'react'
 
-const Ctx = React.createContext(null);
+const Ctx = React.createContext(null)
 
 const load = (key, fallback) => {
   try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
+    const raw = localStorage.getItem(key)
+    return raw ? JSON.parse(raw) : fallback
   } catch {
-    return fallback;
+    return fallback
   }
-};
+}
 
 export const AppDataProvider = ({ children }) => {
-  const [favorites, setFavorites] = React.useState(() => load("favorites", []));
-  const [history, setHistory] = React.useState(() => load("history", []));
+  const [favorites, setFavorites] = React.useState(() => load('favorites', []))
+  const [history, setHistory] = React.useState(() => load('history', []))
 
   React.useEffect(() => {
     try {
-      localStorage.setItem("favorites", JSON.stringify(favorites));
+      localStorage.setItem('favorites', JSON.stringify(favorites))
     } catch {}
-  }, [favorites]);
+  }, [favorites])
 
   React.useEffect(() => {
     try {
-      localStorage.setItem("history", JSON.stringify(history));
+      localStorage.setItem('history', JSON.stringify(history))
     } catch {}
-  }, [history]);
+  }, [history])
 
   const isLiked = React.useCallback(
     (item) => favorites.some((x) => x.itemKey === item.itemKey),
-    [favorites],
-  );
+    [favorites]
+  )
 
   const toggleLike = React.useCallback((item) => {
     setFavorites((prev) => {
-      const exists = prev.some((x) => x.itemKey === item.itemKey);
+      const exists = prev.some((x) => x.itemKey === item.itemKey)
       return exists
         ? prev.filter((x) => x.itemKey !== item.itemKey)
-        : [{ ...item, likedAt: Date.now() }, ...prev];
-    });
-  }, []);
+        : [{ ...item, likedAt: Date.now() }, ...prev]
+    })
+  }, [])
 
   const addHistoryTurn = React.useCallback((historyTurn) => {
-    setHistory((prev) => [historyTurn, ...prev].slice(0, 50));
-  }, []);
+    setHistory((prev) => [historyTurn, ...prev].slice(0, 50))
+  }, [])
 
   const value = React.useMemo(
     () => ({
@@ -55,14 +55,14 @@ export const AppDataProvider = ({ children }) => {
       setFavorites,
       setHistory,
     }),
-    [favorites, history, isLiked, toggleLike, addHistoryTurn],
-  );
+    [favorites, history, isLiked, toggleLike, addHistoryTurn]
+  )
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
-};
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
+}
 
 export const useAppData = () => {
-  const v = React.useContext(Ctx);
-  if (!v) throw new Error("useAppData must be used within AppDataProvider");
-  return v;
-};
+  const v = React.useContext(Ctx)
+  if (!v) throw new Error('useAppData must be used within AppDataProvider')
+  return v
+}
