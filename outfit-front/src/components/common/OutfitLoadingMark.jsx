@@ -1,11 +1,11 @@
-import React from 'react'
+import React from "react";
 
 export const dash = {
   strokeDasharray: 520,
   strokeDashoffset: 520,
-}
+};
 
-function StrokePath({ d, className = '', strokeWidth = 3, style }) {
+function StrokePath({ d, className = "", strokeWidth = 3, style }) {
   return (
     <path
       d={d}
@@ -18,10 +18,10 @@ function StrokePath({ d, className = '', strokeWidth = 3, style }) {
       className={className}
       style={style}
     />
-  )
+  );
 }
 
-const OutfitIconSingleLoader = ({ className = '' }) => {
+const OutfitIconSingleLoader = ({ className = "" }) => {
   return (
     <div className={`flex flex-col items-center gap-3 ${className}`}>
       <div className="w-[160px] h-[160px] rounded-2xl bg-card shadow-sm flex items-center justify-center">
@@ -63,8 +63,8 @@ const OutfitIconSingleLoader = ({ className = '' }) => {
         코디 추천 생성중…
       </p>
     </div>
-  )
-}
+  );
+};
 
 /** 티셔츠 */
 function TShirt({ drawClass }) {
@@ -77,7 +77,7 @@ function TShirt({ drawClass }) {
         className={`text-accent ${drawClass}`}
       />
     </g>
-  )
+  );
 }
 
 /** 바지 */
@@ -118,7 +118,7 @@ function Pants({ drawClass }) {
         className={`text-accent ${drawClass}`}
       />
     </g>
-  )
+  );
 }
 
 /** 후디 */
@@ -149,7 +149,7 @@ function Hoodie({ drawClass }) {
         className={`text-accent ${drawClass}`}
       />
     </g>
-  )
+  );
 }
 
 /** 원피스 */
@@ -163,7 +163,7 @@ function Dress({ drawClass }) {
         className={`text-accent ${drawClass}`}
       />
     </g>
-  )
+  );
 }
 
 /** 구두 */
@@ -176,7 +176,7 @@ function Heels({ drawClass }) {
         className={`text-accent ${drawClass}`}
       />
     </g>
-  )
+  );
 }
 
-export default OutfitIconSingleLoader
+export default OutfitIconSingleLoader;

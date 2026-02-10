@@ -1,5 +1,5 @@
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-@import 'pretendard/dist/web/static/pretendard.css';
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css");
+@import "pretendard/dist/web/static/pretendard.css";
 
 *,
 *::before,
@@ -17,11 +17,11 @@ body {
   font-size: var(--font-base);
   line-height: var(--line-base);
   font-family:
-    'Pretendard',
+    "Pretendard",
     system-ui,
     -apple-system,
     BlinkMacSystemFont,
-    'Segoe UI',
+    "Segoe UI",
     sans-serif;
 }
 
@@ -155,37 +155,36 @@ img {
     opacity: 0;
     transform-origin: 50% 50%;
   }
-
-  .slot1 {
-    @apply animate-slot1;
-  }
-  .slot2 {
-    @apply animate-slot2;
-  }
-  .slot3 {
-    @apply animate-slot3;
-  }
-  .slot4 {
-    @apply animate-slot4;
-  }
-  .slot5 {
-    @apply animate-slot5;
-  }
-
-  /* draw용 클래스 추가 */
-  .draw1 {
-    @apply animate-draw1;
-  }
-  .draw2 {
-    @apply animate-draw2;
-  }
-  .draw3 {
-    @apply animate-draw3;
-  }
-  .draw4 {
-    @apply animate-draw4;
-  }
-  .draw5 {
-    @apply animate-draw5;
+  @layer utilities {
+    .slot1 {
+      @apply animate-slot1;
+    }
+    .slot2 {
+      @apply animate-slot2;
+    }
+    .slot3 {
+      @apply animate-slot3;
+    }
+    .slot4 {
+      @apply animate-slot4;
+    }
+    .slot5 {
+      @apply animate-slot5;
+    }
+    .draw1 {
+      @apply animate-draw1;
+    }
+    .draw2 {
+      @apply animate-draw2;
+    }
+    .draw3 {
+      @apply animate-draw3;
+    }
+    .draw4 {
+      @apply animate-draw4;
+    }
+    .draw5 {
+      @apply animate-draw5;
+    }
   }
 }
