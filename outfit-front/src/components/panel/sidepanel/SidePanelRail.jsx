@@ -1,7 +1,7 @@
-import React from "react";
-import UserButton from "../../common/UserButton";
-import NewChatButton from "../../common/NewChatButton";
-import HistoryChatListButton from "../../common/HistoryChatListButton";
+import React from 'react'
+import UserButton from '../../common/UserButton'
+import NewChatButton from '../../common/NewChatButton'
+import HistoryChatListButton from '../../common/HistoryChatListButton'
 
 const SidePanelRail = ({
   collapsed,
@@ -12,16 +12,16 @@ const SidePanelRail = ({
   return (
     <div className="absolute right-0 top-0 h-full w-[72px] border-l border-border bg-card/80 flex flex-col items-center justify-between py-4">
       <div className="flex flex-col gap-4">
-        {/* ✅ 패널 열기 버튼: 항상 input으로 */}
+        {/*  패널 열기 버튼: 항상 input으로 */}
         <button
           type="button"
           onClick={() => {
-            onOpenInput?.(); // ✅ 먼저 모드 세팅
-            onToggle(); // ✅ 펼치기
+            onOpenInput?.() //  먼저 모드 세팅
+            onToggle() //  펼치기
           }}
           className="h-10 w-10 rounded-xl border border-border bg-card hover:bg-muted flex items-center justify-center"
-          aria-label={collapsed ? "Open side panel" : "Collapse side panel"}
-          title={collapsed ? "열기" : "접기"}
+          aria-label={collapsed ? 'Open side panel' : 'Collapse side panel'}
+          title={collapsed ? '열기' : '접기'}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -43,18 +43,18 @@ const SidePanelRail = ({
 
         <NewChatButton />
 
-        {/* ✅ 🕘: 펼치고 sessions로 */}
+        {/*  🕘: 펼치고 sessions로 */}
         <HistoryChatListButton
           onClick={() => {
-            onOpenSessions?.(); // ✅ 먼저 모드 세팅
-            onToggle(); // ✅ 펼치기
+            onOpenSessions?.() //  먼저 모드 세팅
+            onToggle() //  펼치기
           }}
         />
       </div>
 
       <UserButton to="/userpage" confirmBeforeNav={false} />
     </div>
-  );
-};
+  )
+}
 
-export default SidePanelRail;
+export default SidePanelRail

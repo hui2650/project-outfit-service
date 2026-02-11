@@ -1,10 +1,10 @@
-import React from "react";
-import UploadDropzone from "../UploadDropzone";
-import GenderChoice from "../GenderChoice";
-import CategoryChoice from "../CategoryChoice";
-import TextQueryBox from "../TextQueryBox";
-import SubmitButton from "../SubmitButton";
-import { useChatPage } from "../../../pages/chat/ChatPageContext.jsx"; // 경로 맞춰
+import React from 'react'
+import UploadDropzone from '../UploadDropzone'
+import GenderChoice from '../GenderChoice'
+import CategoryChoice from '../CategoryChoice'
+import TextQueryBox from '../TextQueryBox'
+import SubmitButton from '../SubmitButton'
+import { useChatPage } from '../../../pages/chat/ChatPageContext.jsx' // 경로 맞춰
 
 const SidePanelContent = ({ loading }) => {
   const {
@@ -19,12 +19,12 @@ const SidePanelContent = ({ loading }) => {
     gender,
     setGender,
     file,
-  } = useChatPage();
+  } = useChatPage()
 
-  const pickFile = () => inputRef.current?.click();
+  const pickFile = () => inputRef.current?.click()
 
   return (
-    <div className="bg-card/90 p-8 flex-1 overflow-y-auto">
+    <div className="h-full bg-card/90 p-8 flex-1 overflow-y-auto">
       <UploadDropzone
         previewUrl={previewUrl}
         onFile={handleFile}
@@ -57,7 +57,7 @@ const SidePanelContent = ({ loading }) => {
         isReadyToSubmit={!!file && !!category && !!gender}
       />
     </div>
-  );
-};
+  )
+}
 
-export default SidePanelContent;
+export default SidePanelContent

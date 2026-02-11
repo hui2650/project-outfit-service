@@ -1,19 +1,18 @@
-import React from "react";
+import React from 'react'
 
 // ChatComposer.jsx 수정
 export default function ChatComposer({ disabled = false, onSend }) {
-  const [text, setText] = React.useState("");
+  const [text, setText] = React.useState('')
 
   const submit = () => {
-    const v = text.trim();
-    if (!v || disabled) return;
-    onSend?.(v);
-    setText("");
-  };
+    const v = text.trim()
+    if (!v || disabled) return
+    onSend?.(v)
+    setText('')
+  }
 
   return (
-    /* ✅ bg-gradient를 주면 스크롤되는 내용과 입력창 경계가 자연스러워집니다 */
-    <div className="w-full pb-6 pt-4 bg-gradient-to-t from-background/60 via-background/20 to-transparent pointer-events-none">
+    <div className="absoulte w-full pb-6 pt-4 bg-gradient-to-t from-background/60 via-background/20 to-transparent pointer-events-none">
       <div className="pointer-events-auto w-full px-4">
         <div className="mx-auto w-full max-w-3xl rounded-2xl border border-border bg-card shadow-2xl px-3 py-2">
           <div className="flex items-center gap-2">
@@ -21,16 +20,16 @@ export default function ChatComposer({ disabled = false, onSend }) {
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  submit();
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  submit()
                 }
               }}
               disabled={disabled}
               placeholder={
                 disabled
-                  ? "결과가 있을 때 질문 가능합니다."
-                  : "질문을 입력하세요..."
+                  ? '결과가 있을 때 질문 가능합니다.'
+                  : '질문을 입력하세요...'
               }
               className="flex-1 bg-transparent outline-none text-sm pl-2 placeholder:text-muted-foreground disabled:opacity-60"
             />
@@ -46,5 +45,5 @@ export default function ChatComposer({ disabled = false, onSend }) {
         </div>
       </div>
     </div>
-  );
+  )
 }

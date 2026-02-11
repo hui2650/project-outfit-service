@@ -1,12 +1,12 @@
-import React from "react";
-import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
-import Header from "../components/layout/Header";
-import { useTransition } from "../store/transitionStore";
+import React from 'react'
+import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
+import Header from '../components/layout/Header'
+import { useTransition } from '../store/transitionStore'
 
-const NickNameInput = () => {
-  const nav = useNavigate();
-  const { leaving, handleStart } = useTransition();
+const UserPageNickName = () => {
+  const nav = useNavigate()
+  const { leaving, handleStart } = useTransition()
 
   return (
     <motion.div
@@ -44,7 +44,7 @@ const NickNameInput = () => {
           type="button"
           className="text-md px-5 py-2.5 rounded-lg bg-primary text-white font-semibold disabled:opacity-60"
           disabled={leaving}
-          onClick={() => handleStart(() => nav("/styleinput"))}
+          onClick={() => handleStart(() => nav('/user-info-style'))}
         >
           확인
         </button>
@@ -53,13 +53,13 @@ const NickNameInput = () => {
           type="button"
           className="text-md px-5 py-2.5 rounded-lg bg-gray-500 text-white font-semibold disabled:opacity-60"
           disabled={leaving}
-          onClick={() => handleStart(() => nav("/"))}
+          onClick={() => handleStart(() => nav('/'))}
         >
           뒤로
         </button>
       </div>
     </motion.div>
-  );
-};
+  )
+}
 
-export default NickNameInput;
+export default UserPageNickName
