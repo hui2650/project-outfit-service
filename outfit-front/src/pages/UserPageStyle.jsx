@@ -1,12 +1,12 @@
-import React from "react";
-import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { useTransition } from "../store/transitionStore";
-import Header from "../components/layout/Header";
+import React from 'react'
+import { useNavigate } from 'react-router-dom'
+import { motion } from 'framer-motion'
+import { useTransition } from '../store/transitionStore'
+import Header from '../components/layout/Header'
 
-const StyleInput = () => {
-  const nav = useNavigate();
-  const { leaving, handleStart } = useTransition();
+const UserPageStyle = () => {
+  const nav = useNavigate()
+  const { leaving, handleStart } = useTransition()
 
   return (
     <motion.div
@@ -30,10 +30,10 @@ const StyleInput = () => {
       </div>
       <div className="grid grid-cols-2 grid-rows-2 gap-6 w-full max-w-3xl px-4">
         {[
-          { key: "minimal", label: "미니멀" },
-          { key: "casual", label: "캐쥬얼" },
-          { key: "street", label: "스트릿" },
-          { key: "classic", label: "클래식" },
+          { key: 'minimal', label: '미니멀' },
+          { key: 'casual', label: '캐쥬얼' },
+          { key: 'street', label: '스트릿' },
+          { key: 'classic', label: '클래식' },
         ].map((style) => (
           <div
             key={style.key}
@@ -60,20 +60,20 @@ const StyleInput = () => {
         <button
           type="button"
           className="text-md px-5 py-2.5 rounded-lg bg-primary text-white font-semibold"
-          onClick={() => handleStart(() => nav("/chat"))}
+          onClick={() => handleStart(() => nav('/chat'))}
         >
           확인
         </button>
         <button
           type="button"
           className="text-md px-5 py-2.5 rounded-lg bg-gray-500 text-white font-semibold"
-          onClick={() => handleStart(() => nav("/nicknameinput"))}
+          onClick={() => handleStart(() => nav('/user-info-nickname'))}
         >
           뒤로
         </button>
       </div>
     </motion.div>
-  );
-};
+  )
+}
 
-export default StyleInput;
+export default UserPageStyle

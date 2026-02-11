@@ -1,16 +1,16 @@
-import React from "react";
-import { useAppData } from "../../store/appDataStore.jsx";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faPenToSquare } from "@fortawesome/free-solid-svg-icons";
+import React from 'react'
+import { useAppData } from '../../store/appDataStore.jsx'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faPenToSquare } from '@fortawesome/free-solid-svg-icons'
 
-const NewChatButton = ({ className = "" }) => {
-  const { createNewSession } = useAppData();
+const NewChatButton = ({ className = '' }) => {
+  const { createNewSession } = useAppData()
 
   const handleNewChat = React.useCallback(() => {
-    // ✅ 기존 채팅은 chatSessions에 남아있고,
-    // ✅ currentSessionId만 새 세션으로 바뀌면서 화면이 초기화됨
-    createNewSession();
-  }, [createNewSession]);
+    //  기존 채팅은 chatSessions에 남아있고,
+    //  currentSessionId만 새 세션으로 바뀌면서 화면이 초기화됨
+    createNewSession()
+  }, [createNewSession])
 
   return (
     <button
@@ -25,7 +25,7 @@ const NewChatButton = ({ className = "" }) => {
         className="text-foreground/80 text-lg absolute left-2.5"
       />
     </button>
-  );
-};
+  )
+}
 
-export default NewChatButton;
+export default NewChatButton
