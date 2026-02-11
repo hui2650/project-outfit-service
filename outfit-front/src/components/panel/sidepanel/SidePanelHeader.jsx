@@ -2,21 +2,36 @@ import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faImage } from "@fortawesome/free-solid-svg-icons";
 
-const SidePanelHeader = ({ onCollapse }) => {
+const SidePanelHeader = ({
+  onCollapse,
+  title,
+  onToggleMode,
+  isSessionMode,
+}) => {
   return (
     <div className="p-4 shrink-0 border-b flex justify-between items-center bg-card/80">
-      <div className="flex itmes-center gap-2">
-        <FontAwesomeIcon
-          icon={faImage}
-          className="text-lg px-1.5 py-2 rounded-xl 
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <FontAwesomeIcon
+            icon={faImage}
+            className="text-lg px-1.5 py-2 rounded-xl 
              text-primary/80 bg-primary/15"
-        />
-        <h2 className="font-foreground font-semibold text-base leading-loose">
-          아이템 입력
-        </h2>
+          />
+          <h2 className="font-foreground font-semibold text-base leading-loose">
+            {title}
+          </h2>
+        </div>
+
+        {/* 🔁 토글 버튼 */}
+        <button
+          type="button"
+          onClick={onToggleMode}
+          className="text-xs px-2 py-1 rounded-md border border-border hover:bg-accent/20"
+        >
+          {isSessionMode ? "아이템 입력" : "이전 채팅"}
+        </button>
       </div>
       {/* 접는 버튼(헤더 우측) */}
-
       <button
         type="button"
         onClick={onCollapse}

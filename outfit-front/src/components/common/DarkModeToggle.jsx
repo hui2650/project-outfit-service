@@ -33,7 +33,7 @@ export default function DarkModeToggle() {
     <button
       type="button"
       onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="inline-flex items-center gap-2 rounded-lg border border-border bg-card/10 px-3 py-2 text-sm text-accent hover:bg-muted/30"
+      className="inline-flex items-center gap-2 rounded-lg border border-border bg-card/10 px-3 py-2 text-sm text-accent hover:bg-muted/"
       aria-pressed={isDark}
       aria-label="Toggle dark mode"
     >

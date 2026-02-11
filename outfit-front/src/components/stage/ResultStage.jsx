@@ -1,22 +1,30 @@
-import React from 'react'
-import Turn from './Turn'
-import EmptyResult from './EmptyResult'
-import ChatComposer from './ChatComposer'
+import React from "react";
+import Turn from "./Turn";
+import EmptyResult from "./EmptyResult";
+import ChatComposer from "./ChatComposer";
 
-const ResultStage = ({ chatLogs, onSelectItem, onSendChat, chatDisabled }) => {
-  const bottomRef = React.useRef(null)
+const ResultStage = ({
+  chatLogs,
+  onSelectItem,
+  onSendChat,
+  chatDisabled,
+  onNewChat,
+}) => {
+  const bottomRef = React.useRef(null);
+
+  const safeLogs = Array.isArray(chatLogs) ? chatLogs : [];
 
   const isOnlyLoading =
-    chatLogs.length === 1 && chatLogs[0].status === 'loading'
+    safeLogs.length === 1 && safeLogs[0].status === "loading";
 
-  const hasLoading = chatLogs?.some((turn) => turn.status === 'loading')
+  const hasLoading = safeLogs?.some((turn) => turn.status === "loading");
 
   React.useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [chatLogs])
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [safeLogs]);
 
   // 비어있을 때는 EmptyResult에서 가운데 정렬 처리하는 게 제일 깔끔
-  if (!chatLogs || chatLogs.length === 0) {
+  if (!safeLogs || safeLogs.length === 0) {
     return (
       <div className="h-full flex flex-col">
         <div className="flex-1">
@@ -24,7 +32,7 @@ const ResultStage = ({ chatLogs, onSelectItem, onSendChat, chatDisabled }) => {
         </div>
         <ChatComposer disabled={true} onSend={onSendChat} />
       </div>
-    )
+    );
   }
 
   return (
@@ -33,15 +41,15 @@ const ResultStage = ({ chatLogs, onSelectItem, onSendChat, chatDisabled }) => {
       <div
         className={`flex-1 px-4 ${
           isOnlyLoading
-            ? 'overflow-hidden'
+            ? "overflow-hidden"
             : `overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] ${
-                hasLoading ? '' : 'pb-[140px]'
+                hasLoading ? "" : "pb-[140px]"
               }`
         }`}
-        style={{ scrollbarGutter: 'stable' }}
+        style={{ scrollbarGutter: "stable" }}
       >
         <div className="w-full max-w-none lg:max-w-7xl mx-auto ">
-          {chatLogs.map((turn) => (
+          {safeLogs.map((turn) => (
             <Turn key={turn.id} turn={turn} onSelectItem={onSelectItem} />
           ))}
           <div ref={bottomRef} />
@@ -56,7 +64,7 @@ const ResultStage = ({ chatLogs, onSelectItem, onSendChat, chatDisabled }) => {
         <ChatComposer disabled={chatDisabled} onSend={onSendChat} />
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default ResultStage
+export default ResultStage;

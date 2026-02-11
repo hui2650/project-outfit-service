@@ -22,7 +22,7 @@ from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from transformers import CLIPModel, CLIPProcessor
 from ultralytics import YOLO
 
@@ -1262,6 +1262,22 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
+
+# ---------
+# Followup schema (front 유지)
+# ---------
+class FollowupReq(BaseModel):
+    text: str
+    requestId: Optional[str] = None
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+    category: Optional[str] = ""
+    gender: Optional[str] = ""
+
+class FollowupResp(BaseModel):
+    answer: str
+    requestId: Optional[str] = None
+
+# 기존 /chat 용
 class ChatReq(BaseModel):
     messages: List[Dict[str, str]]
     system: Optional[str] = None
@@ -1269,6 +1285,37 @@ class ChatReq(BaseModel):
 class ChatResp(BaseModel):
     reply: str
 
+
+# ---------
+# guard: 패션/코디/앱 맥락 외 질문 차단
+# ---------
+FASHION_KEYWORDS = [
+    "코디", "패션", "옷", "착장", "룩", "스타일", "스타일링", "핏", "무드",
+    "상의", "하의", "아우터", "자켓", "코트", "신발", "운동화", "가방",
+    "색", "컬러", "블랙", "화이트", "베이지", "브라운", "네이비",
+    "데일리룩", "스트릿", "미니멀", "캐주얼", "포멀", "오피스룩", "데이트룩",
+    "코디추천", "룩북", "스냅", "ootd",
+    "추천", "후보", "1번", "2번", "3번", "첫번째", "두번째", "세번째",
+    "이거 어울려", "매치", "조합", "어떻게 입", "뭐 입", "설명해줘",
+]
+
+def _is_fashion_query(text: str) -> bool:
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    # 숫자만 보내는 경우(예: "1", "1번")는 코디 설명으로 간주
+    if t in {"1", "2", "3", "4", "5", "6", "7", "8"}:
+        return True
+    # 키워드 포함 여부
+    for kw in FASHION_KEYWORDS:
+        if kw.lower() in t:
+            return True
+    return False
+
+
+# ---------
+# OpenAI call
+# ---------
 async def call_openai_responses(messages: List[Dict[str, str]], system: Optional[str] = None) -> str:
     if not OPENAI_API_KEY:
         raise RuntimeError("Missing OPENAI_API_KEY")
@@ -1306,10 +1353,195 @@ async def call_openai_responses(messages: List[Dict[str, str]], system: Optional
                                 texts.append(t)
     return "\n".join(texts).strip()
 
+
+import re
+
+# 공백 제거 + 소문자 + 특수문자 일부 제거
+def _norm(text: str) -> str:
+    t = (text or "").strip().lower()
+    t = re.sub(r"\s+", "", t)
+    return t
+
+HELP_PATTERNS = [
+    # 정체/역할
+    r"^누구냐넌$",
+    r"^넌누구야$",
+    r"^너는누구야$",
+    r"^너누구야$",
+    r"^너누구냐$",
+    r"^너뭐야$",
+    r"^너뭔데$",
+    r"^너머야$",      
+    r"^너뭐임$",
+    r"^정체뭐야$",
+    r"^정체가뭐야$",
+    r"assistant|어시스턴트|봇|챗봇|ai",
+    # 앱/사용법
+    r"이앱뭐야|이거뭐야|여기뭐야|서비스뭐야|프로그램뭐야|사이트뭐야",
+    r"어떻게써|어케써|어떻게사용|사용법|사용방법|가이드|도움말|help",
+]
+
+HELP_RE = re.compile("|".join(f"(?:{p})" for p in HELP_PATTERNS), re.I)
+HELLO_PAT = re.compile(r"^(hi|hello|hey|하이|안녕(하세요)?|여보세요|헬로)\b", re.I)
+
+def _is_greeting(text: str) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    if HELLO_PAT.search(t):
+        return True
+    if t in {"?", "??", "ㅋ", "ㅎㅎ", "ㅎ", "ㅇㅇ", "ㅇㅋ"}:
+        return True
+    # 짧은 호출/인사 느낌
+    if len(t) <= 6 and any(x in t.lower() for x in ["안녕", "여보", "hi", "hello", "hey"]):
+        return True
+    return False
+
+def _is_help_query(text: str) -> bool:
+    t = _norm(text)
+    if not t:
+        return False
+
+    # 패턴 매칭(강력)
+    if HELP_RE.search(t):
+        return True
+
+    # 약한 휴리스틱: "너" + ("누구" or "뭐" or "정체") 조합이면 help로 인정
+    if "너" in t and (("누구" in t) or ("뭐" in t) or ("정체" in t)):
+        return True
+
+    # 약한 휴리스틱: "사용/방법/어떻게/help" 중 하나라도 있으면 help로 인정
+    if any(k in t for k in ["사용", "방법", "어떻게", "어케", "help", "가이드", "도움말"]):
+        if any(k in t for k in ["앱", "서비스", "이거", "여기", "프로그램", "사이트", "너", "봇", "ai"]):
+            return True
+
+    return False
+
+
+# ---------
+# /api/v1/chat : 추천 결과(items) 기반 "코디 설명" 전용
+# ---------
+@app.post("/api/v1/chat", response_model=FollowupResp)
+async def chat_followup(req: FollowupReq):
+    t = (req.text or "").strip()
+
+    # 1) 허용 범위: 패션/코디 OR 인사 OR 앱/사용법/정체성
+    allow = _is_fashion_query(t) or _is_greeting(t) or _is_help_query(t)
+    if not allow:
+        return FollowupResp(
+            answer="이 대화는 코디/스타일 설명과 앱 사용 안내만 도와줄 수 있어. 코디 번호(1~8)나 원하는 스타일로 물어봐줘!",
+            requestId=req.requestId,
+        )
+
+    category = (req.category or "").strip()
+    gender = (req.gender or "").strip()
+
+    # 2) items 컨텍스트 만들기 (다운로드/이미지 열람 없이 메타만)
+    items = req.items or []
+    lines = []
+    for i, it in enumerate(items[:8], start=1):
+        title = (it.get("title") or "").strip()
+        source = (it.get("source") or it.get("_source") or "").strip()
+        tier = (it.get("tier") or "").strip()
+        score = it.get("rankScore")
+        url = (it.get("imageUrl") or "").strip()
+        lines.append(f"{i}) title={title} | source={source} | tier={tier} | score={score} | url={url}")
+
+    items_ctx = "\n".join(lines) if lines else "(no items)"
+
+    # 3) system prompt
+    system = f"""
+너는 패션 코디 추천 앱의 “후속 설명” 어시스턴트다.
+사용자는 이미 1~8번 코디 카드(사진)를 보고 있고, 너는 그 카드들의 메타데이터(items)만 제공받는다.
+
+━━━━━━━━━━━━━━━━━━━━━━
+핵심 제약 (반드시 지켜)
+━━━━━━━━━━━━━━━━━━━━━━
+- 이미지를 직접 볼 수 없다. “사진에서 보인다/보이는 것 같다” 같은 표현 금지.
+- 대신 사용자가 보고 있는 코디를 ‘설명/선택 도움’ 관점에서 말한다.
+- 내부 시스템 용어(점수, penalty, tier, 랭킹 알고리즘)를 답변에 직접 언급하지 않는다.
+  → 사용자에게는 항상 “코디 포인트(무드/조합/활용도/상황)”로 번역해서 설명한다.
+- 상품명(title)을 길게 읽거나 1~8을 그대로 상품 목록처럼 나열하는 답변 금지.
+  → 필요하면 “상의/하의/아우터/신발/가방”처럼 일반화해서 말한다.
+- 사용자가 물어본 것만 답한다. 불필요한 확장 금지.
+- 답변 끝에 “더 궁금한 거?” 같은 유도 질문 금지.
+
+━━━━━━━━━━━━━━━━━━━━━━
+대화 톤
+━━━━━━━━━━━━━━━━━━━━━━
+- 부드럽고 담백하게(Claude처럼), 과장 없이.
+- 같은 문장을 반복하지 말고 상황에 맞게 유동적으로 표현한다.
+- 답변 길이:
+  - 단일 질문: 2~4문장(또는 불릿 2~4개)로 짧게 끝낸다.
+  - 전체 요약/비교: 1~8번을 “각 1줄”로만 훑는다(길게 쓰지 않는다).
+
+━━━━━━━━━━━━━━━━━━━━━━
+모드 판별 (가장 중요)
+━━━━━━━━━━━━━━━━━━━━━━
+
+[MODE H: 앱/사용법/정체성 도움말]
+- “너는 누구야?”, “이 앱 뭐야?”, “어떻게 사용해?”, “사용법 알려줘” 류면 앱 안내를 먼저 한다.
+- 3~6문장, 단계는 최대 3단계.
+- “나는 이미지를 직접 보는 게 아니라 메타정보 기반으로 설명한다”를 1문장으로 명확히 포함.
+
+[MODE 0: 인사/호출]
+- “안녕/여보세요/하이/hi/hello” 류면 짧게 인사하고, 번호로 말하면 설명 가능하다고만 말한다.
+
+[MODE A: 전체 설명/비교/추천 이유]
+- “전체적으로/비교해줘/추천 이유”면 1)~8)까지 반드시 전부 출력, 각 1줄.
+
+[MODE B: 번호 지정 설명]
+- “2번 코디/4번 설명”처럼 번호가 있으면 해당 번호만 2~4문장.
+
+[MODE C: 단일 조언 질문]
+- “신발 뭐가 좋아?/색 추천/핏/계절/TPO” 같은 단일 질문이면 2~4문장으로 짧게만 답하고,
+  1~8 재나열 금지, 예상질문/되묻기 금지(정말 불명확할 때만 질문 1개 허용).
+
+[MODE D: 제일 추천]
+- “제일 추천/하나만 고르면”이면 1개만 고르고,
+  “조건 위반이 적다/점수가 높다” 같은 말은 하지 말고,
+  코디 포인트(활용도/조합 안정감/무드 일관성 등)로만 2~3개 이유를 설명한다.
+
+[MODE E: 불만/거절]
+- “N번 별로야/내 스타일 아냐”면
+  ‘추천이 취향과 어긋날 수 있음’을 자연스럽게 인정 + 그럴 법한 포인트 1문장 + 싫은 포인트 1개만 질문.
+  “공감합니다” 같은 상담봇 문장 금지.
+
+━━━━━━━━━━━━━━━━━━━━━━
+추가 규칙
+━━━━━━━━━━━━━━━━━━━━━━
+- 브랜드/가격: 메타만으로 정확히 모른다고 인정하고 아이템 유형 수준으로만 부드럽게.
+- 체형: 사용자가 텍스트로 체형을 말했을 때만. 이미지로 추정 금지. (피할 핏 1 + 추천 1~2 + 팁 1)
+
+━━━━━━━━━━━━━━━━━━━━━━
+추가 힌트
+━━━━━━━━━━━━━━━━━━━━━━
+- category={category}
+- gender={gender}
+
+추천 후보(items):
+{items_ctx}
+""".strip()
+
+    msgs = [{"role": "user", "content": t}]
+    reply = await call_openai_responses(msgs, system=system)
+    return FollowupResp(answer=reply, requestId=req.requestId)
+
+
+
+# ---------
+# 기존 범용 /chat 은 유지하되, 여기서도 패션만 허용하고 싶으면 동일 guard 적용 가능
+# ---------
 @app.post("/chat", response_model=ChatResp)
 async def chat(req: ChatReq):
+    # 선택: 범용 /chat도 패션 외 차단하고 싶으면 아래 켜기
+    # last = (req.messages[-1]["content"] if req.messages else "") if req.messages else ""
+    # if not _is_fashion_query(last):
+    #     return ChatResp(reply="이 서버의 /chat은 패션/코디 관련 대화만 지원해.")
+
     reply = await call_openai_responses(req.messages, req.system)
     return ChatResp(reply=reply)
+
 
 
 # python -m uvicorn main:app --reload

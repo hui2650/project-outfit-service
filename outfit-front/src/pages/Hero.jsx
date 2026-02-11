@@ -1,4 +1,5 @@
-import React, { useRef, useState } from "react";
+import React, { useRef } from "react";
+import { useTransition } from "../store/transitionStore";
 import { useNavigate } from "react-router-dom";
 
 import Header from "../components/layout/Header";
@@ -9,7 +10,7 @@ import HeroIntroSecond from "../components/hero/HeroIntroSecond";
 
 const Hero = () => {
   const nav = useNavigate();
-  const [leaving, setLeaving] = useState(false);
+  const { leaving, handleStart } = useTransition();
 
   const scrollerRef = useRef(null);
 
@@ -21,22 +22,23 @@ const Hero = () => {
     durationMs: 650,
   });
 
-  const handleStart = () => {
-    setLeaving(true);
-    setTimeout(() => nav("/chat"), 250);
-  };
-
   return (
     <div className="h-screen overflow-hidden">
       <Header />
 
       <div ref={scrollerRef} className="h-full overflow-y-auto scroll-smooth">
         <div data-hero-section>
-          <HeroIntroFirst leaving={leaving} handleStart={handleStart} />
+          <HeroIntroFirst
+            leaving={leaving}
+            handleStart={() => handleStart(() => nav("/nicknameinput"))}
+          />
         </div>
 
         <div data-hero-section>
-          <HeroIntroSecond leaving={leaving} handleStart={handleStart} />
+          <HeroIntroSecond
+            leaving={leaving}
+            handleStart={() => handleStart(() => nav("/nicknameinput"))}
+          />
         </div>
       </div>
     </div>
