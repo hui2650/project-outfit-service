@@ -1,5 +1,5 @@
 // src/components/stage/EmptyResult.jsx
-import React from 'react'
+import React from "react";
 
 const EmptyResult = () => {
   return (
@@ -22,7 +22,7 @@ const EmptyResult = () => {
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default EmptyResult
+export default EmptyResult;

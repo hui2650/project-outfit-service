@@ -6,9 +6,11 @@ import SidePanelRail from './SidePanelRail'
 import SidePanelHeader from './SidePanelHeader'
 import SidePanelContent from './SidePanelContent'
 import SidePanelFooter from './SidePanelFooter'
+import { useLayout } from '../../../store/layoutStore'
 
 const SidePanel = ({
   previewUrl,
+  inputRef,
   textQuery,
   onTextQuery,
   onFile,
@@ -21,21 +23,25 @@ const SidePanel = ({
   file,
   error,
 }) => {
-  const [collapsed, setCollapsed] = React.useState(false)
+  const { panelCollapsed: collapsed, setPanelCollapsed } = useLayout()
 
   return (
     <aside
       className={[
-        'relative h-full shrink-0 z-10 overflow-hidden',
-        'bg-card/50 backdrop-blur-md',
-        'transition-[width] duration-300 ease-in-out',
-        collapsed ? 'w-[72px]' : 'w-[380px] max-w-sm',
+        'h-full shrink-0 z-30 overflow-hidden bg-card/90',
+        // 📱 모바일 기본 (md 미만)
+        collapsed
+          ? 'relative w-[72px]'
+          : 'fixed right-0 top-0 h-full w-[380px]',
+        // 💻 md 이상에서 정상 레이아웃 복구
+        'lg:relative lg:h-full',
+        collapsed ? 'lg:w-[72px]' : 'lg:w-[380px]',
       ].join(' ')}
     >
       {collapsed && (
         <SidePanelRail
           collapsed={collapsed}
-          onToggle={() => setCollapsed(false)}
+          onToggle={() => setPanelCollapsed(false)}
         />
       )}
 
@@ -49,8 +55,9 @@ const SidePanel = ({
             : 'opacity-100 translate-x-0',
         ].join(' ')}
       >
-        <SidePanelHeader onCollapse={() => setCollapsed(true)} />
+        <SidePanelHeader onCollapse={() => setPanelCollapsed(true)} />
         <SidePanelContent
+          inputRef={inputRef}
           previewUrl={previewUrl}
           textQuery={textQuery}
           onTextQuery={onTextQuery}

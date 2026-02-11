@@ -1,39 +1,39 @@
-import React from 'react'
+import React from "react";
 
-const STORAGE_KEY = 'theme' // "dark" | "light"
+const STORAGE_KEY = "theme"; // "dark" | "light"
 
 function applyTheme(theme) {
-  const root = document.documentElement // <html>
-  if (theme === 'dark') root.classList.add('dark')
-  else root.classList.remove('dark')
+  const root = document.documentElement; // <html>
+  if (theme === "dark") root.classList.add("dark");
+  else root.classList.remove("dark");
 }
 
 function getInitialTheme() {
-  const saved = localStorage.getItem(STORAGE_KEY)
-  if (saved === 'dark' || saved === 'light') return saved
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved === "dark" || saved === "light") return saved;
 
   const prefersDark = window.matchMedia?.(
-    '(prefers-color-scheme: dark)'
-  )?.matches
-  return prefersDark ? 'dark' : 'light'
+    "(prefers-color-scheme: dark)",
+  )?.matches;
+  return prefersDark ? "dark" : "light";
 }
 
 export default function DarkModeToggle() {
-  const [theme, setTheme] = React.useState(() => getInitialTheme())
+  const [theme, setTheme] = React.useState(() => getInitialTheme());
 
   // mount + theme 변경 시 적용/저장
   React.useEffect(() => {
-    applyTheme(theme)
-    localStorage.setItem(STORAGE_KEY, theme)
-  }, [theme])
+    applyTheme(theme);
+    localStorage.setItem(STORAGE_KEY, theme);
+  }, [theme]);
 
-  const isDark = theme === 'dark'
+  const isDark = theme === "dark";
 
   return (
     <button
       type="button"
-      onClick={() => setTheme(isDark ? 'light' : 'dark')}
-      className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-accent hover:bg-muted"
+      onClick={() => setTheme(isDark ? "light" : "dark")}
+      className="inline-flex items-center gap-2 rounded-lg border border-border bg-card/10 px-3 py-2 text-sm text-accent hover:bg-muted/30"
       aria-pressed={isDark}
       aria-label="Toggle dark mode"
     >
@@ -79,5 +79,5 @@ export default function DarkModeToggle() {
         </svg>
       )}
     </button>
-  )
+  );
 }

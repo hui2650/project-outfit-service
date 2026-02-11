@@ -1,10 +1,10 @@
-import React from 'react'
+import React from "react";
 
 const TextQueryBox = ({ textQuery, onTextQuery }) => {
   return (
     <div className="mt-8">
       <textarea
-        className="w-full h-32 rounded-xl p-3 text-sm outline-none resize-none
+        className=" w-full h-32 rounded-xl p-3 text-sm outline-none resize-none
         bg-background border border-border
         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
         focus-visible:ring-offset-2 focus-visible:ring-offset-background
@@ -14,7 +14,7 @@ const TextQueryBox = ({ textQuery, onTextQuery }) => {
         onChange={(e) => onTextQuery(e.target.value)}
       />
     </div>
-  )
-}
+  );
+};
 
-export default TextQueryBox
+export default TextQueryBox;

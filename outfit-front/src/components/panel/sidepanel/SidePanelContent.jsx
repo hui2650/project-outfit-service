@@ -7,6 +7,7 @@ import SubmitButton from '../SubmitButton'
 
 const SidePanelContent = ({
   previewUrl,
+  inputRef,
   textQuery,
   onTextQuery,
   onFile,
@@ -18,11 +19,10 @@ const SidePanelContent = ({
   onChangeGender,
   file,
 }) => {
-  const inputRef = React.useRef(null)
   const pickFile = () => inputRef.current?.click()
 
   return (
-    <div className="p-8 flex-1 overflow-y-auto">
+    <div className="bg-card/90 p-8 flex-1 overflow-y-auto">
       <UploadDropzone
         previewUrl={previewUrl}
         onFile={onFile}
@@ -31,7 +31,14 @@ const SidePanelContent = ({
 
       {/* 버튼은 그냥 실행만 */}
       <button
-        className="mt-4 w-full rounded-xl bg-primary text-primary-foreground py-3 font-semibold"
+        className="mt-4 w-full rounded-xl 
+        bg-gradient-to-r from-primary/90 to-accent/90
+        text-white
+        py-3 font-semibold
+        hover:opacity-90
+        transition
+        shadow-[0_4px_14px_rgba(124,58,237,0.15)]
+        "
         type="button"
         onClick={pickFile}
       >

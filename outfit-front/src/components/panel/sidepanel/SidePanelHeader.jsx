@@ -1,15 +1,15 @@
-import React from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faImage } from '@fortawesome/free-solid-svg-icons'
+import React from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faImage } from "@fortawesome/free-solid-svg-icons";
 
 const SidePanelHeader = ({ onCollapse }) => {
   return (
-    <div className="p-5 shrink-0 border-b flex justify-between bg-card/80">
+    <div className="p-4 shrink-0 border-b flex justify-between items-center bg-card/80">
       <div className="flex itmes-center gap-2">
         <FontAwesomeIcon
           icon={faImage}
           className="text-lg px-1.5 py-2 rounded-xl 
-             text-primary bg-primary/15"
+             text-primary/80 bg-primary/15"
         />
         <h2 className="font-foreground font-semibold text-base leading-loose">
           아이템 입력
@@ -43,7 +43,7 @@ const SidePanelHeader = ({ onCollapse }) => {
         </svg>
       </button>
     </div>
-  )
-}
+  );
+};
 
-export default SidePanelHeader
+export default SidePanelHeader;

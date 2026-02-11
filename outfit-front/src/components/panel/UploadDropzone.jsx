@@ -8,7 +8,7 @@ import { faImage } from '@fortawesome/free-solid-svg-icons'
 const UploadDropzone = ({ previewUrl, onFile, inputRef }) => {
   return (
     <div
-      className="group relative border border-dashed border-2 rounded-xl h-52 flex items-center justify-center hover:border-primary hover:bg-primary/5 overflow-hidden"
+      className="group relative border border-dashed border-3 rounded-xl h-52 flex items-center justify-center hover:border-primary/70 hover:bg-primary/5 overflow-hidden"
       onClick={() => inputRef.current?.click()}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
@@ -33,8 +33,9 @@ const UploadDropzone = ({ previewUrl, onFile, inputRef }) => {
             <FontAwesomeIcon
               icon={faImage}
               className=" text-4xl px-3.5 py-4 rounded-[24px] transition-colors
-             text-primary bg-primary/15
-             group-hover:bg-primary/25"
+             text-primary/80 bg-primary/15
+             group-hover:bg-primary/25
+             group-hover:text-primary/90"
             />
           </div>
           <div className="text-foreground text-sm text-center px-6">
