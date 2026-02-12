@@ -11,6 +11,36 @@ const load = (key, fallback) => {
   }
 };
 
+const initialGuest = {
+  guestId: null,
+  nickname: "",
+  style: "",
+};
+
+const getNextSessionTitle = (sessions) => {
+  // "새 채팅", "새 채팅 1", "새 채팅 2" 등에서 최대 번호를 찾아 +1
+  // "새 채팅"만 있는 건 1로 취급
+  let max = 0;
+
+  for (const s of sessions ?? []) {
+    const t = (s?.title ?? "").trim();
+    if (t === "새 채팅") {
+      max = Math.max(max, 1);
+      continue;
+    }
+    const m = /^새\s*채팅\s*(\d+)$/.exec(t);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+
+  const next = max + 1;
+  return `새 채팅 ${next}`;
+};
+
+const normalizeTitle = (title) => {
+  const t = String(title ?? "").trim();
+  return t.length ? t : "새 채팅";
+};
+
 export const AppDataProvider = ({ children }) => {
   const [favorites, setFavorites] = React.useState(() => load("favorites", []));
   const [history, setHistory] = React.useState(() => load("history", []));
@@ -53,12 +83,15 @@ export const AppDataProvider = ({ children }) => {
   }, [currentSessionId]);
 
   React.useEffect(() => {
-    if (chatSessions.length === 0) {
+    if ((chatSessions ?? []).length === 0) {
       // 첫 실행: 세션 하나 만들어주기
       const first = {
-        sessionId: crypto.randomUUID(),
+        sessionId:
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : String(Date.now()),
         createdAt: Date.now(),
-        title: "새 채팅",
+        title: getNextSessionTitle([]), // 새 채팅 1
         turns: [],
       };
       setChatSessions([first]);
@@ -126,7 +159,93 @@ export const AppDataProvider = ({ children }) => {
   }, []);
 
   const addHistoryTurn = React.useCallback((historyTurn) => {
-    setHistory((prev) => [historyTurn, ...prev].slice(0, 50));
+    return (
+      (chatSessions ?? []).find((s) => s.sessionId === currentSessionId) ?? null
+    );
+  }, [chatSessions, currentSessionId]);
+
+  const chatLogs = currentSession?.turns ?? [];
+
+  const setGuest = React.useCallback((payload) => {
+    setGuestState((prev) => ({
+      ...(prev ?? initialGuest),
+      ...(payload ?? {}),
+    }));
+  }, []);
+
+  const ensureGuestId = React.useCallback(() => {
+    setGuestState((prev) => {
+      if (prev?.guestId) return prev;
+      const id =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? `g_${crypto.randomUUID()}`
+          : `g_${Date.now()}`;
+      return { ...(prev ?? {}), guestId: id };
+    });
+  }, []);
+
+  const resetGuest = React.useCallback(() => {
+    setGuestState(initialGuest);
+    try {
+      localStorage.setItem("guest", JSON.stringify(initialGuest));
+    } catch {}
+  }, []);
+
+  // 세션 생성 함수
+  const createNewSession = React.useCallback(() => {
+    const sessionId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : String(Date.now());
+
+    const createdAt = Date.now();
+
+    setChatSessions((prev) => {
+      const base = prev ?? [];
+      const title = getNextSessionTitle(base);
+      const newSession = { sessionId, createdAt, title, turns: [] };
+      return [newSession, ...base];
+    });
+
+    setCurrentSessionId(sessionId);
+  }, []);
+
+  // 세션 제목 변경 함수
+  const renameSession = React.useCallback((sessionId, title) => {
+    const nextTitle = normalizeTitle(title);
+
+    setChatSessions((prev) =>
+      (prev ?? []).map((s) =>
+        s.sessionId === sessionId ? { ...s, title: nextTitle } : s,
+      ),
+    );
+  }, []);
+
+  // 세션 삭제 함수
+  const deleteSession = React.useCallback((sessionId) => {
+    setChatSessions((prev) => {
+      const remaining = (prev ?? []).filter((s) => s.sessionId !== sessionId);
+
+      setCurrentSessionId((cur) => {
+        if (cur !== sessionId) return cur;
+        return remaining[0]?.sessionId ?? null;
+      });
+
+      return remaining;
+    });
+  }, []);
+
+  const toggleLike = React.useCallback((item) => {
+    setFavorites((prev) => {
+      const exists = (prev ?? []).some((x) => x.itemKey === item.itemKey);
+      return exists
+        ? (prev ?? []).filter((x) => x.itemKey !== item.itemKey)
+        : [{ ...item, likedAt: Date.now() }, ...(prev ?? [])];
+    });
+  }, []);
+
+  const addHistoryTurn = React.useCallback((historyTurn) => {
+    setHistory((prev) => [historyTurn, ...(prev ?? [])].slice(0, 50));
   }, []);
 
   const value = React.useMemo(
@@ -139,20 +258,23 @@ export const AppDataProvider = ({ children }) => {
       setFavorites,
       setHistory,
 
-      //  chat
+      // chat
       chatSessions,
       setChatSessions,
       currentSessionId,
       setCurrentSessionId,
       createNewSession,
+      renameSession,
+      deleteSession,
 
-      //  derived
+      // derived
       chatLogs,
 
-      //  guest
+      // guest
       guest,
       setGuest,
       ensureGuestId,
+      resetGuest,
     }),
     [
       favorites,
@@ -162,12 +284,13 @@ export const AppDataProvider = ({ children }) => {
       addHistoryTurn,
       chatSessions,
       currentSessionId,
-
+      renameSession,
+      deleteSession,
       chatLogs,
-
       guest,
       setGuest,
       ensureGuestId,
+      resetGuest,
     ],
   );
 

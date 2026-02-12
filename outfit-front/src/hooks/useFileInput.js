@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState } from "react";
 
 /**
  * useFileInput()
@@ -17,10 +17,20 @@ import { useEffect, useState } from 'react'
  */
 export const useFileInput = () => {
   // 서버로 보낼 파일 원본
-  const [file, setFile] = useState(null)
+  const [file, setFile] = useState(null);
 
   // 화면 미리보기용 blob URL
-  const [previewUrl, setPreviewUrl] = useState(null)
+  const [previewUrl, setPreviewUrl] = useState(null);
+
+  // 전송 후에도 유지되는 미리보기(썸네일) URL
+  const [sentPreviewUrl, setSentPreviewUrl] = useState(null);
+
+  const freezePreview = () => {
+    if (!file) return null;
+    const url = URL.createObjectURL(file);
+    setSentPreviewUrl(url);
+    return url;
+  };
 
   /**
    * handleFile(f)
@@ -36,22 +46,22 @@ export const useFileInput = () => {
    * - 따라서 previewUrl이 바뀌거나 컴포넌트가 언마운트 될 때 revoke가 필요하다
    */
   const handleFile = (f) => {
-    setFile(f)
+    setFile(f);
 
     // 사용자가 파일을 취소하거나 제거한 경우
     if (!f) {
-      setPreviewUrl(null)
-      return
+      setPreviewUrl(null);
+      return;
     }
 
     // 새 파일을 미리보기로 보여주기 위한 blob URL 생성
-    setPreviewUrl(URL.createObjectURL(f))
-  }
+    setPreviewUrl(URL.createObjectURL(f));
+  };
 
   const clear = () => {
-    setFile(null)
-    setPreviewUrl(null)
-  }
+    setFile(null);
+    setPreviewUrl(null);
+  };
 
   /**
    * previewUrl cleanup
@@ -64,12 +74,17 @@ export const useFileInput = () => {
    * - revoke를 안 하면 파일을 계속 바꿀 때 blob URL이 누수처럼 쌓일 수 있음
    */
   useEffect(() => {
-    if (!previewUrl) return
+    if (!previewUrl) return;
 
     return () => {
-      URL.revokeObjectURL(previewUrl)
-    }
-  }, [previewUrl])
+      URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  useEffect(() => {
+    if (!sentPreviewUrl) return;
+    return () => URL.revokeObjectURL(sentPreviewUrl);
+  }, [sentPreviewUrl]);
 
   return {
     file,
@@ -77,5 +92,8 @@ export const useFileInput = () => {
     setFile,
     handleFile,
     clear,
-  }
-}
+    sentPreviewUrl,
+    freezePreview,
+    // setSentPreviewUrl,
+  };
+};

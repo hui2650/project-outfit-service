@@ -14,21 +14,22 @@ export const ChatPageProvider = ({ children }) => {
   // 1) right panel mode
   // ===============================
   const [rightPanelMode, setRightPanelMode] = React.useState("input"); // "input" | "sessions"
-  //  중복 요청 방지 락
+
+  // 중복 요청 방지 락
   const submitLockRef = React.useRef(false);
+
+  const [rightPanelMode, setRightPanelMode] = React.useState("input"); // "input" | "sessions"
+
   const openInputPanel = React.useCallback(
     () => setRightPanelMode("input"),
     [],
   );
-  const openSessionsPanel = React.useCallback(
-    () => setRightPanelMode("sessions"),
-    [],
-  );
+
 
   // ===============================
   // 2) input states
   // ===============================
-  const { file, previewUrl, handleFile, clear } = useFileInput();
+  const { file, previewUrl, handleFile, clear, freezePreview } = useFileInput();
   const inputRef = React.useRef(null);
 
   const {
@@ -48,6 +49,7 @@ export const ChatPageProvider = ({ children }) => {
   // ===============================
   const { chatLogs, appendTurn, updateTurn } = useChatLogs();
   const { addHistoryTurn, createNewSession } = useAppData();
+
   const { requestRecommend } = useRecommend({
     updateTurn,
     onHistoryTurn: addHistoryTurn,
@@ -61,7 +63,7 @@ export const ChatPageProvider = ({ children }) => {
   const latestDoneTurn = React.useMemo(() => {
     if (!Array.isArray(chatLogs)) return null;
     for (let i = chatLogs.length - 1; i >= 0; i--) {
-      if (chatLogs[i].status === "done") return chatLogs[i];
+      if (chatLogs[i]?.status === "done") return chatLogs[i];
     }
     return null;
   }, [chatLogs]);
@@ -81,6 +83,14 @@ export const ChatPageProvider = ({ children }) => {
   const handleNewChat = React.useCallback(() => {
     createNewSession();
     resetRightInputs();
+    openInputPanel();
+  }, [createNewSession, resetRightInputs, openInputPanel]);
+
+  const handleSubmit = React.useCallback(async () => {
+    if (submitLockRef.current) return;
+
+    createNewSession();
+    resetRightInputs();
     openInputPanel(); // 새 채팅은 무조건 input으로
   }, [createNewSession, resetRightInputs, openInputPanel]);
 
@@ -95,9 +105,11 @@ export const ChatPageProvider = ({ children }) => {
 
     setError(null);
 
+    const sentUrl = freezePreview();
+
     const newTurn = createTurn({
       file,
-      previewUrl,
+      previewUrl: sentUrl ?? previewUrl,
       textQuery,
       category,
       gender,
@@ -105,7 +117,6 @@ export const ChatPageProvider = ({ children }) => {
 
     appendTurn(newTurn);
 
-    // 락
     submitLockRef.current = true;
 
     try {
@@ -117,12 +128,8 @@ export const ChatPageProvider = ({ children }) => {
         gender,
       });
 
-      // 성공했을 때만 초기화
       resetRightInputs();
-    } catch (e) {
-      // 실패면 유지(재시도 UX)
     } finally {
-      //  무조건 락 OFF
       submitLockRef.current = false;
     }
   }, [
@@ -134,6 +141,7 @@ export const ChatPageProvider = ({ children }) => {
     appendTurn,
     requestRecommend,
     resetRightInputs,
+    freezePreview,
   ]);
 
   const handleSendChat = React.useCallback(
@@ -141,9 +149,10 @@ export const ChatPageProvider = ({ children }) => {
       if (!latestDoneTurn) return;
 
       const requestId = latestDoneTurn.requestId ?? null;
-      const carouselMsg = [...latestDoneTurn.messages]
+      const carouselMsg = [...(latestDoneTurn.messages ?? [])]
         .reverse()
-        .find((m) => m.type === "carousel");
+        .find((m) => m?.type === "carousel");
+
       const items = carouselMsg?.items ?? [];
 
       await sendChat({
@@ -158,6 +167,30 @@ export const ChatPageProvider = ({ children }) => {
     },
     [latestDoneTurn, sendChat, category, gender],
   );
+
+  React.useEffect(() => {
+    if (!Array.isArray(chatLogs) || chatLogs.length === 0) return;
+
+    const hasLoading = chatLogs.some((t) => t?.status === "loading");
+    const hasDone = chatLogs.some((t) => t?.status === "done");
+
+    if (hasLoading && !hasDone) {
+      createNewSession();
+      resetRightInputs();
+      openInputPanel();
+    }
+  }, [chatLogs, createNewSession, resetRightInputs, openInputPanel]);
+
+  React.useEffect(() => {
+    const nav = performance.getEntriesByType?.("navigation")?.[0];
+    const isReload = nav?.type === "reload";
+
+    if (isReload) {
+      createNewSession();
+      resetRightInputs();
+      openInputPanel();
+    }
+  }, [createNewSession, resetRightInputs, openInputPanel]);
 
   const value = React.useMemo(
     () => ({
@@ -190,7 +223,7 @@ export const ChatPageProvider = ({ children }) => {
       handleSendChat,
 
       // for session panel
-      setRightPanelMode, // (필요하면)
+      setRightPanelMode,
     }),
     [
       rightPanelMode,

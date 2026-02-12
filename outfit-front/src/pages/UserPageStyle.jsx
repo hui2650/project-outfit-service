@@ -32,10 +32,10 @@ const UserPageStyle = () => {
     >
       <Header />
       <div className=" flex flex-col items-center max-w-4xl ">
-        <h1 className="text-4xl text-foreground mb-4 font-bold">
+        <h1 className="text-3xl text-foreground mb-4 font-bold">
           어떤 스타일을 좋아하세요?
         </h1>
-        <h3 className="text-lg text-secondary-foreground/80 mb-8">
+        <h3 className="text-base text-secondary-foreground/80 mb-8">
           선호하시는 스타일에 맞춰서 추천해드릴게요
         </h3>
       </div>

@@ -13,6 +13,9 @@ export const useFollowupChat = ({ updateTurn }) => {
     items = [],
     category = "",
     gender = "",
+    messages = [],
+    category = "",
+    gender = "",
   }) => {
     const userMsgId = uid();
     const assistantMsgId = uid();
@@ -37,6 +40,10 @@ export const useFollowupChat = ({ updateTurn }) => {
         guestId: guest?.guestId ?? null,
         nickname: guest?.nickname ?? "",
         style: guest?.style ?? "",
+        chatLogs: messages,
+        guestId: guest?.guestId ?? null,
+        nickname: guest?.nickname ?? "",
+        style: guest?.style ?? "",
       });
 
       if (resp?.error) {
@@ -58,7 +65,8 @@ export const useFollowupChat = ({ updateTurn }) => {
         return;
       }
 
-      const answer = resp?.answer ?? "답변을 생성하지 못했어.";
+      const answer = resp?.answer ?? "답변을 생성하지 못했습니다.";
+
 
       // 2) placeholder를 진짜 답변으로 치환
       updateTurn(turnId, (t) => ({
@@ -76,7 +84,7 @@ export const useFollowupChat = ({ updateTurn }) => {
                 id: m.id,
                 role: "assistant",
                 type: "error",
-                message: "서버 연결이 불안정해",
+                message: "서버 연결이 불안정합니다.",
                 code: "NETWORK_ERROR",
               }
             : m,
