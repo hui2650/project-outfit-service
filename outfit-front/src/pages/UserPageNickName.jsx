@@ -1,12 +1,18 @@
-import React from 'react'
-import { motion } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
-import Header from '../components/layout/Header'
-import { useTransition } from '../store/transitionStore'
+import React from "react";
+import { motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
+import Header from "../components/layout/Header";
+import { useTransition } from "../store/transitionStore";
+import { useAppData } from "../store/appDataStore";
 
 const UserPageNickName = () => {
-  const nav = useNavigate()
-  const { leaving, handleStart } = useTransition()
+  const nav = useNavigate();
+  const { leaving, handleStart } = useTransition();
+
+  // 입력용 state
+  const [nickname, setNickname] = React.useState("");
+
+  const { setGuest, ensureGuestId } = useAppData();
 
   return (
     <motion.div
@@ -31,6 +37,8 @@ const UserPageNickName = () => {
 
         <input
           type="text"
+          value={nickname}
+          onChange={(e) => setNickname(e.target.value)}
           className="w-full h-10 rounded-xl p-3 bg-transparent outline-none text-md
           border border-border
           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
@@ -42,9 +50,20 @@ const UserPageNickName = () => {
       <div className="flex gap-4 mt-6">
         <button
           type="button"
+          disabled={leaving || !nickname.trim()}
           className="text-md px-5 py-2.5 rounded-lg bg-primary text-white font-semibold disabled:opacity-60"
-          disabled={leaving}
-          onClick={() => handleStart(() => nav('/user-info-style'))}
+          // onClick={() => handleStart(() => nav("/user-info-style"))}
+          onClick={() =>
+            handleStart(() => {
+              const v = nickname.trim();
+              if (!v) return;
+
+              ensureGuestId();
+              setGuest({ nickname: v });
+
+              nav("/user-info-style");
+            })
+          }
         >
           확인
         </button>
@@ -53,13 +72,13 @@ const UserPageNickName = () => {
           type="button"
           className="text-md px-5 py-2.5 rounded-lg bg-gray-500 text-white font-semibold disabled:opacity-60"
           disabled={leaving}
-          onClick={() => handleStart(() => nav('/'))}
+          onClick={() => handleStart(() => nav("/"))}
         >
           뒤로
         </button>
       </div>
     </motion.div>
-  )
-}
+  );
+};
 
-export default UserPageNickName
+export default UserPageNickName;
