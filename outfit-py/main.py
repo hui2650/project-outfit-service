@@ -8,6 +8,9 @@ import io
 import os
 import time
 import traceback
+import re
+import json
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 from collections import defaultdict
@@ -44,19 +47,19 @@ print("[BOOT] device =", DEVICE)
 MAX_RETURN = int(os.getenv("MAX_RETURN", "8"))
 FINAL_LIMIT_DEFAULT = int(os.getenv("FINAL_LIMIT_DEFAULT", "8"))
 
-HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "14.0"))
+HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "8.0"))
 DEFAULT_HEADERS = {
     "User-Agent": os.getenv("HTTP_USER_AGENT", "Mozilla/5.0"),
     "Referer": os.getenv("HTTP_REFERER", "https://search.naver.com/"),
     "Accept": "*/*",
 }
 
-CANDIDATE_TIMEOUT_SEC = float(os.getenv("CANDIDATE_TIMEOUT_SEC", "24.0"))
-MAX_CONCURRENCY = int(os.getenv("MAX_CONCURRENCY", "10"))
+CANDIDATE_TIMEOUT_SEC = float(os.getenv("CANDIDATE_TIMEOUT_SEC", "14.0"))
+MAX_CONCURRENCY = int(os.getenv("MAX_CONCURRENCY", "12"))
 RAW_POOL_LIMIT = int(os.getenv("RAW_POOL_LIMIT", "260"))
-MAX_DOWNLOAD_IMAGES = int(os.getenv("MAX_DOWNLOAD_IMAGES", "180"))
+MAX_DOWNLOAD_IMAGES = int(os.getenv("MAX_DOWNLOAD_IMAGES", "90"))
 
-CLIP_MAX_SIDE = int(os.getenv("CLIP_MAX_SIDE", "640"))
+CLIP_MAX_SIDE = int(os.getenv("CLIP_MAX_SIDE", "512"))
 MIN_SHORT_SIDE = int(os.getenv("MIN_SHORT_SIDE", "420"))  # target after rescue upscale
 MIN_DECODE_SHORT_SIDE_HARD = int(os.getenv("MIN_DECODE_SHORT_SIDE_HARD", "120"))  # true hard-fail below this
 
@@ -206,6 +209,7 @@ def _to_tensor(x):
     raise RuntimeError(f"Unexpected feature output type: {type(x)}")
 
 TEXT_FEAT_CACHE: Dict[Tuple[str, ...], torch.Tensor] = {}
+TEXT_FEAT_CACHE_DEV: Dict[Tuple[str, ...], torch.Tensor] = {}
 
 def _texts_key(texts: List[str]) -> Tuple[str, ...]:
     return tuple([t.strip() for t in texts])
@@ -228,6 +232,25 @@ def clip_text_features(texts: List[str]) -> torch.Tensor:
     return TEXT_FEAT_CACHE[key]
 
 @torch.inference_mode()
+def clip_text_features_dev(texts: List[str]) -> torch.Tensor:
+    """Cached text features ON DEVICE to avoid repeated .to(DEVICE) overhead."""
+    key = _texts_key(texts)
+    feat = TEXT_FEAT_CACHE_DEV.get(key)
+    if feat is not None:
+        return feat
+    cpu_feat = clip_text_features(texts)  # normalized, cpu
+    dev_feat = cpu_feat.to(DEVICE)
+    TEXT_FEAT_CACHE_DEV[key] = dev_feat
+    return dev_feat
+
+@torch.inference_mode()
+def clip_sims_from_feat(img_feat: torch.Tensor, texts: List[str]) -> np.ndarray:
+    """Compute cosine sims between a precomputed normalized image feature [1,d] and texts."""
+    txt = clip_text_features_dev(texts)  # [n,d] on DEVICE
+    sims = (img_feat @ txt.T).squeeze(0).detach().float().cpu().numpy()
+    return sims
+
+@torch.inference_mode()
 def clip_image_features(img: Image.Image) -> torch.Tensor:
     img = resize_max_side(img, CLIP_MAX_SIDE)
     i_in = clip_processor(images=img, return_tensors="pt")
@@ -242,9 +265,7 @@ def clip_image_features(img: Image.Image) -> torch.Tensor:
 @torch.inference_mode()
 def clip_score_image_text(img: Image.Image, texts: List[str]) -> np.ndarray:
     img_feat = clip_image_features(img)  # [1, d]
-    txt_feat = clip_text_features(texts).to(DEVICE)  # [n, d]
-    sims = (img_feat @ txt_feat.T).squeeze(0).detach().float().cpu().numpy()
-    return sims
+    return clip_sims_from_feat(img_feat, texts)
 
 @torch.inference_mode()
 def clip_scores_fast(img: Image.Image, prompts: List[str]) -> List[float]:
@@ -462,10 +483,17 @@ def is_valid_person_box(
     w = max(0.0, float(x2n - x1n))
     h = max(0.0, float(y2n - y1n))
     area = w * h
+
+    # Reject many YOLO false-positives on product/catalog shots
+    aspect = h / max(1e-6, w)
+    if aspect < 1.05:
+        return False
     if category == "footwear":
-        return (area >= 0.045) and (h >= 0.22)
-    # Default strictness
-    return (area >= 0.08) and (h >= 0.35)
+        # Feet/leg-only shots exist; keep lenient, but still require some verticality.
+        return (area >= 0.045) and (h >= 0.22) and (y2n >= 0.55)
+
+    # Default strictness: prefer outfit photos (person reaches mid-to-lower frame)
+    return (area >= 0.085) and (h >= 0.38) and (y2n >= 0.62)
 
 def crop_by_norm(img: Image.Image, x1n: float, y1n: float, x2n: float, y2n: float) -> Image.Image:
     w, h = img.size
@@ -489,6 +517,22 @@ def map_gender(gender_raw: str) -> str:
         return "female"
     return "unknown"
 
+
+def infer_gender_from_text(q: str) -> str:
+    """Infer desired gender from user text query when UI doesn't pass gender."""
+    s = (q or "").lower()
+    # Korean high-signal words
+    if re.search(r"(여자|여성|여친룩|여성룩|여자코디)", s):
+        return "female"
+    if re.search(r"(남자|남성|남친룩|남자코디)", s):
+        return "male"
+    # English
+    if re.search(r"\b(women|woman|female|girls?)\b", s):
+        return "female"
+    if re.search(r"\b(men|man|male|boys?)\b", s):
+        return "male"
+    return "unknown"
+
 def map_category(cat_raw: str) -> str:
     c = (cat_raw or "").strip().lower()
     mapping = {
@@ -508,6 +552,43 @@ def map_category(cat_raw: str) -> str:
         "bag": "bag",
     }
     return mapping.get(c, c or "unknown")
+
+def infer_category_from_taxonomy(item_en: str, item_part: str) -> str:
+    """Infer a stable category from taxonomy outputs when UI doesn't pass `category`.
+
+    We must avoid category='unknown' because many outfit/product/person gates depend on it.
+    """
+    en = (item_en or "").strip().lower()
+    part = (item_part or "").strip().lower()
+
+    # Footwear
+    if part == "feet" or any(k in en for k in ["sneaker", "boot", "loafer", "dress shoes", "sandals", "slides", "flip"]):
+        return "footwear"
+
+    # Bag / carried items
+    if part == "hands" or "bag" in en or "backpack" in en or "handbag" in en:
+        return "bag"
+
+    # Dress
+    if "dress" in en:
+        return "dress"
+
+    # Outerwear
+    if any(k in en for k in ["coat", "trench", "puffer", "jacket", "blazer"]):
+        return "outerwear"
+
+    # Skirt vs bottom
+    if "skirt" in en:
+        return "skirt"
+
+    if part == "lower" or any(k in en for k in ["jeans", "slacks", "shorts", "pants"]):
+        return "bottom"
+
+    if part == "upper" or any(k in en for k in ["t-shirt", "shirt", "hoodie", "sweater", "knit"]):
+        return "top"
+
+    # Fallback: treat as top to keep outfit-only gating on.
+    return "top"
 
 CATEGORY_KW = {
     "top": "상의 셔츠 티셔츠 니트 후드",
@@ -608,6 +689,7 @@ def build_search_query(
     gender_mapped: str,
     normalized_color: Optional[str],
     coat_length: Optional[str] = None,
+    style_pref: Optional[str] = None,
 ) -> str:
     parts: List[str] = []
     if text_query:
@@ -627,6 +709,17 @@ def build_search_query(
         parts.append("남자 남성 남자코디 남친룩 남자패션")
     elif gender_mapped == "female":
         parts.append("여자 여성 여자코디 여친룩 여성룩")
+
+    # Style preference terms (query boost)
+    STYLE_QUERY_KR = {
+        "minimal": "미니멀 심플 베이직 무채색 톤온톤", 
+        "classic": "클래식 포멀 오피스룩 댄디", 
+        "street": "스트릿 힙합 스트릿룩 힙한", 
+        "casual": "캐주얼 데일리 편한", 
+    }
+    sp = (style_pref or "").strip().lower()
+    if sp in STYLE_QUERY_KR:
+        parts.append(STYLE_QUERY_KR[sp])
 
     parts.append(CATEGORY_KW.get(category_mapped, ""))
     parts.append("착화샷 발샷 신발코디 코디 룩북 스트릿 스냅 데일리룩 무신사 스냅 코디북 OOTD") if category_mapped == "footwear" else parts.append("전신 착샷 코디 룩북 스트릿 스냅 데일리룩 무신사 스냅 코디북 OOTD 착용샷")
@@ -689,26 +782,29 @@ def crop_region_by_part(person_crop: Image.Image, part: str) -> Image.Image:
     return safe_crop(person_crop, 0, h * 0.10, w, h * 0.90)
 
 def multi_crops_for_part(person_crop: Image.Image, part: str) -> List[Image.Image]:
+    """Return a small set of informative crops (kept intentionally small for latency)."""
     w, h = person_crop.size
+    part = part or "torso"
     crops: List[Image.Image] = []
+
+    # Primary part crop
     crops.append(crop_region_by_part(person_crop, part))
 
+    # One additional supportive crop depending on part
     if part == "feet":
         crops.append(safe_crop(person_crop, 0, h * 0.58, w, h * 1.00))
-        crops.append(safe_crop(person_crop, w * 0.06, h * 0.60, w * 0.94, h * 1.00))
     elif part == "hands":
         crops.append(safe_crop(person_crop, 0, h * 0.16, w, h * 0.96))
-        crops.append(safe_crop(person_crop, w * 0.04, h * 0.14, w * 0.96, h * 0.94))
     elif part == "upper":
         crops.append(safe_crop(person_crop, 0, h * 0.04, w, h * 0.70))
-        crops.append(safe_crop(person_crop, w * 0.05, h * 0.06, w * 0.95, h * 0.66))
     elif part == "lower":
         crops.append(safe_crop(person_crop, 0, h * 0.30, w, h * 1.00))
-        crops.append(safe_crop(person_crop, w * 0.05, h * 0.36, w * 0.95, h * 0.99))
     else:
-        crops.append(safe_crop(person_crop, 0, h * 0.04, w, h * 0.96))
+        crops.append(safe_crop(person_crop, 0, h * 0.06, w, h * 0.94))
 
+    # Always include a center-square crop as fallback
     crops.append(center_square_crop(person_crop, 0.72))
+
     out = [c for c in crops if short_side(c) >= 120]
     return out
 
@@ -781,6 +877,15 @@ NEG_PRODUCT_PROMPTS_COMMON = [
     "an isolated product photo",
     "a mannequin product photo",
     "a screenshot of an online shopping page",
+    "an ecommerce listing photo",
+    "a fashion product detail page screenshot",
+    "a lookbook collage of separated items",
+]
+
+NEG_FLATLAY_PROMPTS = [
+    "a flat lay outfit collage",
+    "an outfit items board collage",
+    "a style board collage with clothing items",
 ]
 
 GENDER_MALE_PROMPTS = [
@@ -888,11 +993,26 @@ async def kakao_search_once(query: str, size: int = 80, page: int = 1) -> List[D
     except Exception:
         return []
 
+
+def canonicalize_url(u: str) -> str:
+    """Normalize image URLs to reduce near-duplicates (e.g., same image with different ?w= sizes)."""
+    u = (u or "").strip()
+    if not u:
+        return ""
+    try:
+        sp = urlsplit(u)
+        # Strip very common size/thumbnail query params that create duplicates
+        q = [(k, v) for (k, v) in parse_qsl(sp.query, keep_blank_values=True) if k.lower() not in {"w", "width", "h", "height", "type"}]
+        nq = urlencode(q, doseq=True)
+        return urlunsplit((sp.scheme, sp.netloc, sp.path, nq, ""))  # drop fragment
+    except Exception:
+        return u
+
 def merge_dedupe(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     seen = set()
     out = []
     for c in items:
-        key = (c.get("link") or "")[:400] or (c.get("originallink") or "")[:400]
+        key = canonicalize_url((c.get("link") or "")[:800] or (c.get("originallink") or "")[:800])
         if not key:
             continue
         if key in seen:
@@ -906,8 +1026,10 @@ async def search_multi_sources(queries: List[str]) -> List[Dict[str, Any]]:
     for q in queries:
         if "naver" in SEARCH_SOURCES and NAVER_CLIENT_ID and NAVER_CLIENT_SECRET:
             tasks.append(naver_search_once(q, display=NAVER_DISPLAY_EACH, start=1))
+            tasks.append(naver_search_once(q, display=NAVER_DISPLAY_EACH, start=1+NAVER_DISPLAY_EACH))
         if "kakao" in SEARCH_SOURCES and KAKAO_REST_API_KEY:
             tasks.append(kakao_search_once(q, size=KAKAO_SIZE_EACH, page=1))
+            tasks.append(kakao_search_once(q, size=KAKAO_SIZE_EACH, page=2))
     if not tasks:
         return []
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -965,40 +1087,64 @@ async def score_candidates(
     gender: str,
     normalized_color: Optional[str],
     coat_length: Optional[str],
-    user_item_embed: np.ndarray,
+    user_item_feat: torch.Tensor,  # [1,d] normalized on DEVICE
     user_q: str,
     item_en: str,
     item_part: str,
     client: httpx.AsyncClient,
     concurrency: int = 10,
+    time_budget_sec: float = 13.5,  # internal scoring budget (overall target ~15s)
 ) -> Tuple[List[ScoredCand], Dict[str, int]]:
+    """Latency-optimized scorer.
+
+    Key changes vs previous:
+    - Reuse CLIP image features: 1 forward per image/crop, then dot with multiple text feature sets.
+    - Fewer crops (max 3) and fewer secondary prompts when category is footwear.
+    - Soft early-stop: stop spawning more work once we have enough good results or budget is close.
+    """
     sem = asyncio.Semaphore(concurrency)
     drop_counts = defaultdict(int)
     lock = asyncio.Lock()
+    t_start = time.time()
 
     async def bump(k: str):
         async with lock:
             drop_counts[k] += 1
 
+    # Pre-build some common text feature keys once (device cache handles repeats)
+    outfit_pos_texts = OUTFIT_POS_PROMPTS
+    neg_prod_texts = NEG_PRODUCT_PROMPTS_COMMON
+    neg_flat_texts = NEG_FLATLAY_PROMPTS
+
+    # For non-footwear, gender prompts may help; for footwear we skip.
+    gender_m_texts = GENDER_MALE_PROMPTS
+    gender_f_texts = GENDER_FEMALE_PROMPTS
+
     async def process_one(it: Dict[str, Any]) -> Optional[ScoredCand]:
         try:
-            # Footwear candidates often require extra redirects/CDNs and we run multiple CLIP checks.
-            # Give them a slightly larger per-candidate budget to reduce false "candidate_timeout" drops.
-            cand_timeout = CANDIDATE_TIMEOUT_SEC
-            if category in {"footwear", "outerwear"}:
-                cand_timeout = max(CANDIDATE_TIMEOUT_SEC, 28.0)
+            # Tight per-candidate timeout to keep tail latency down
+            cand_timeout = 10.5 if category not in {"footwear", "outerwear"} else 12.5
             async with asyncio.timeout(cand_timeout):
                 url = it.get("link") or ""
                 if not url:
                     await bump("no_url")
                     return None
 
-                # Hard-block obvious shop/catalog images for bag recommendations.
-                # These domains frequently return product-only images and hurt accuracy.
                 ulc = url.lower()
                 shop_soft = False
+
+                # Hard blacklist for obvious product-market domains (rarely outfit photos)
+                if any(b in ulc for b in [
+                    "alicdn.com",
+                    "aliexpress",
+                    "alibaba",
+                    "taobao",
+                    "tmall",
+                ]):
+                    await bump("marketplace_url_hard")
+                    return None
+
                 if category == "bag":
-                    # product-first hosts / paths (very high false-positive rate)
                     if (
                         ("shop1.phinf" in ulc)
                         or ("shop-phinf" in ulc)
@@ -1016,12 +1162,9 @@ async def score_candidates(
                         await bump("shop_url_hard")
                         return None
 
-                # For outfit categories, also hard-block clear product catalog endpoints (no 착용샷).
                 if category in {"outerwear", "top", "bottom", "dress", "skirt", "footwear"}:
                     if ("shop1.phinf" in ulc) or ("shop-phinf" in ulc) or ("/shopping" in ulc) or ("smartstore" in ulc) or ("storefarm" in ulc):
-                        await bump("shop_url_hard")
                         shop_soft = True
-                    # Musinsa store / catalog images (goods_img / estimate) often break "착용샷" requirement.
                     if ("msscdn.net/images/goods_img" in ulc) or ("/images/goods_img/" in ulc) or ("/data/estimate/" in ulc) or ("goods_img" in ulc and "usersnap" not in ulc):
                         await bump("catalog_url_hard")
                         return None
@@ -1030,23 +1173,22 @@ async def score_candidates(
                     b = await _fetch_image_bytes(url, client)
                 if not b:
                     await bump("download_fail")
-                    return None  # HARD FAIL
+                    return None
                 img = _safe_open_image(b)
                 if img is None:
                     await bump("decode_fail")
-                    return None  # HARD FAIL
+                    return None
 
                 ss0 = short_side(img)
                 if ss0 < MIN_DECODE_SHORT_SIDE_HARD:
                     await bump("too_small_hard")
-                    return None  # HARD FAIL (truly tiny)
+                    return None
                 if ss0 < MIN_SHORT_SIDE:
                     img = upscale_min_short_side(img, MIN_SHORT_SIDE)
                     await bump("too_small_rescued")
 
-                # person crop or fallback center crop
+                # Person crop
                 persons = detect_person_boxes(img)
-                # Reduce false-positive "person" detections on catalog/product images.
                 persons = [b for b in persons if is_valid_person_box(b, category=category)]
                 used_person = False
                 if persons:
@@ -1057,18 +1199,15 @@ async def score_candidates(
                     person_crop = center_square_crop(img, 0.90)
                     pconf = 0.0
                     await bump("no_person")
+
                 penalty = 0.0
                 reasons: Dict[str, Any] = {}
 
-                # Soft penalty: shopping/cdn URLs tend to be product-heavy, but may still include model 착용샷.
-                # We keep them (to avoid zero results) but downweight.
                 if shop_soft:
                     penalty += 0.12
                     reasons["shop_url_soft"] = 0.12
 
                 if not used_person:
-                    # For outfit recommendation, some categories should never accept non-person/product images.
-                    # Footwear is a special case: many valid "착화샷" include only lower-body/feet.
                     if category in {"bag", "outerwear", "top", "bottom", "dress", "skirt"}:
                         await bump("no_person_hard")
                         return None
@@ -1076,19 +1215,35 @@ async def score_candidates(
                     reasons["no_person"] = float(P_NO_PERSON)
                     reasons["person_fallback"] = "center_crop"
 
-                # outfit/product soft gate
-                pos_outfit = float(np.max(clip_score_image_text(img, OUTFIT_POS_PROMPTS)))
-                neg_prod = float(np.max(clip_score_image_text(img, NEG_PRODUCT_PROMPTS_COMMON)))
-                outfit_ok = (pos_outfit > (neg_prod - 0.02))  # lenient
-                # For some categories, be strict: if the image looks like product/catalog, drop it.
-                if category in {"bag", "outerwear", "top", "bottom", "dress", "skirt"} and (neg_prod >= pos_outfit + 0.02):
+                # ====== CLIP features (cached per crop) ======
+                # Full image feature (for outfit/product + optional gender)
+                img_feat = clip_image_features(img)  # [1,d] on DEVICE
+
+                # Outfit/product scores (no extra forwards)
+                pos_outfit = float(np.max(clip_sims_from_feat(img_feat, outfit_pos_texts)))
+                neg_prod = float(np.max(clip_sims_from_feat(img_feat, neg_prod_texts)))
+                neg_flatlay = float(np.max(clip_sims_from_feat(img_feat, neg_flat_texts)))
+                neg_non_outfit = max(neg_prod, neg_flatlay)
+
+                # If the image is more like a product/flatlay than an outfit, drop hard.
+                # Apply to footwear too (cards/catalogs often sneak in otherwise).
+                if category in {"bag", "outerwear", "top", "bottom", "dress", "skirt", "footwear"} and (neg_non_outfit >= pos_outfit + 0.02):
                     await bump("product_hard")
                     return None
+
+                # For footwear, if we couldn't detect a person and outfit score is weak, treat as non-outfit.
+                if (category == "footwear") and (not used_person) and (pos_outfit < 0.24):
+                    await bump("no_person_footwear_hard")
+                    return None
+
+                outfit_ok = (pos_outfit > (neg_non_outfit - 0.02))
                 if not outfit_ok:
                     penalty += P_OUTFIT_PRODUCT_FAIL
                     reasons["outfit_product_fail"] = float(P_OUTFIT_PRODUCT_FAIL)
 
-                # item presence (best crop over multiple)
+                reasons["outfit_product_dbg"] = {"pos_outfit": pos_outfit, "neg_prod": neg_prod, "neg_flatlay": neg_flatlay}
+
+                # Item presence over a small crop set
                 crops = multi_crops_for_part(person_crop, item_part)
                 if not crops:
                     crops = [center_square_crop(person_crop, 0.78)]
@@ -1096,123 +1251,140 @@ async def score_candidates(
 
                 distractors = choose_distractors(item_en, item_part)
                 prompts = item_presence_prompts(item_en, normalized_color or "", distractors)
+                # Pre-cache text feats once
+                _ = clip_text_features_dev(prompts)
 
                 best_crop = None
                 best_t = -1.0
                 best_bad = -1.0
                 best_margin = -1.0
-                best_prob = -1.0
+
+                best_crop_feat: Optional[torch.Tensor] = None
+
                 for c in crops:
-                    rs = clip_scores_fast(c, prompts)
+                    c_feat = clip_image_features(c)  # [1,d]
+                    sims = clip_sims_from_feat(c_feat, prompts)
+                    # Convert to softmax probs (as before) but without extra forwards
+                    x = sims - float(np.max(sims))
+                    ex = np.exp(x)
+                    p = ex / (np.sum(ex) + 1e-12)
+                    rs = p.astype(np.float32)
+
                     t_best = float(max(rs[0:3]))
                     b_best = float(max(rs[3:7]))
                     margin = float(t_best - b_best)
-                    prob = float(t_best)
-                    if margin + prob > best_margin + best_prob:
+
+                    if (margin + t_best) > (best_margin + best_t):
                         best_margin = margin
-                        best_prob = prob
                         best_t = t_best
                         best_bad = b_best
                         best_crop = c
+                        best_crop_feat = c_feat
 
                 if best_crop is None:
                     best_crop = center_square_crop(person_crop, 0.78)
+                    best_crop_feat = clip_image_features(best_crop)
                     best_t = 0.0
                     best_bad = 0.0
                     best_margin = 0.0
 
-                # Item presence: footwear tends to be smaller in-frame and noisier.
-                # Keep the same scoring pipeline, but use a slightly looser acceptance
-                # and rely on penalties + similarity ranking.
                 if category == "footwear":
                     item_ok = (best_t >= 0.085) and (best_margin >= -0.02)
                 else:
                     item_ok = (best_t >= 0.12) and (best_margin >= 0.00)
 
                 if not item_ok:
-                    # For non-footwear, wrong-item images are very harmful (we'd rather return fewer).
                     if category != "footwear" and best_t < 0.090:
                         await bump("item_presence_hard")
                         return None
                     penalty += P_ITEM_PRESENCE_FAIL
                     reasons["item_presence_fail"] = float(P_ITEM_PRESENCE_FAIL)
                     reasons["item_presence"] = {"t": round(best_t, 4), "bad": round(best_bad, 4), "m": round(best_margin, 4)}
-                # outerwear length (롱/숏) soft check
+
+                # Outerwear length (optional, only if explicitly inferred/hinted)
                 if category == "outerwear" and coat_length in {"long", "short"}:
-                    lp = clip_scores_fast(person_crop, [
-                        "a person wearing a long coat",
-                        "a person wearing a short coat",
-                    ])
-                    long_p, short_p = float(lp[0]), float(lp[1])
+                    pc_feat = clip_image_features(person_crop)
+                    lp_sims = clip_sims_from_feat(pc_feat, ["a person wearing a long coat", "a person wearing a short coat"])
+                    # turn to probs to match earlier behavior
+                    x = lp_sims - float(np.max(lp_sims))
+                    ex = np.exp(x)
+                    p = ex / (np.sum(ex) + 1e-12)
+                    long_p, short_p = float(p[0]), float(p[1])
                     lconf = abs(long_p - short_p)
                     if lconf >= 0.08:
                         if coat_length == "long" and short_p > long_p:
                             penalty += 0.12
                             reasons["coat_length_mismatch"] = 0.12
-                            reasons["coat_length_scores"] = {"long": round(long_p,4), "short": round(short_p,4), "conf": round(lconf,4)}
                         elif coat_length == "short" and long_p > short_p:
                             penalty += 0.12
                             reasons["coat_length_mismatch"] = 0.12
-                            reasons["coat_length_scores"] = {"long": round(long_p,4), "short": round(short_p,4), "conf": round(lconf,4)}
-                    else:
-                        reasons["coat_length_scores"] = {"long": round(long_p,4), "short": round(short_p,4), "conf": round(lconf,4)}
+                    reasons["coat_length_scores"] = {"long": round(long_p,4), "short": round(short_p,4), "conf": round(lconf,4)}
 
-                # color mismatch penalty
+                # Color mismatch penalty (still uses pixel heuristic, cheap)
                 cpen, cdbg = color_penalty(normalized_color, best_crop)
                 if cpen > 0:
                     penalty += float(cpen)
                     reasons["color_mismatch"] = float(cpen)
                 reasons["color_dbg"] = cdbg
 
-                # similarity (region)
-                cand_region_embed = clip_image_embed(best_crop)
-                sim_region = cos_sim(user_item_embed, cand_region_embed)
-
+                # Similarity (region): dot in torch (no numpy conversion)
+                sim_region = float((best_crop_feat @ user_item_feat.T).squeeze().detach().float().cpu().item())
                 if sim_region < SIM_MIN_SOFT:
                     penalty += (P_SIM_LOW * (0.6 if category == "outerwear" else 1.0))
                     reasons["sim_low"] = float(P_SIM_LOW * (0.6 if category == "outerwear" else 1.0))
                     reasons["sim_region"] = round(float(sim_region), 4)
 
-                # gender penalty: skip for footwear (too many "feet only" shots + speeds up scoring)
-                if category == "footwear":
-                    male_s, female_s, gender_conf = 0.0, 0.0, 0.0
-                    reasons["gender_scores"] = {"male": 0.0, "female": 0.0, "conf": 0.0}
-                else:
-                    male_s = float(np.max(clip_score_image_text(img, GENDER_MALE_PROMPTS)))
-                    female_s = float(np.max(clip_score_image_text(img, GENDER_FEMALE_PROMPTS)))
+                
+                # Gender (skip footwear)
+                male_s, female_s, gender_conf = 0.0, 0.0, 0.0
+                if category != "footwear":
+                    # If the user asked for a gender (explicitly or inferred from query),
+                    # evaluate gender on the person crop when available for higher precision.
+                    feat_for_gender = img_feat
+                    if gender in ("male", "female") and used_person:
+                        feat_for_gender = clip_image_features(person_crop)
+
+                    male_s = float(np.max(clip_sims_from_feat(feat_for_gender, gender_m_texts)))
+                    female_s = float(np.max(clip_sims_from_feat(feat_for_gender, gender_f_texts)))
                     gender_conf = abs(male_s - female_s)
+
                     if gender in ("male", "female") and (gender_conf < 0.03):
                         penalty += P_GENDER_UNCERTAIN
                         reasons["gender_uncertain"] = float(P_GENDER_UNCERTAIN)
-                    reasons["gender_scores"] = {"male": round(male_s, 4), "female": round(female_s, 4), "conf": round(float(gender_conf), 4)}
-                    # Stronger gender preference when user explicitly selected gender.
-                    if gender == "female" and (male_s > female_s + 0.06):
-                        penalty += 0.18
-                        reasons["gender_mismatch"] = 0.18
-                    elif gender == "male" and (female_s > male_s + 0.06):
-                        penalty += 0.18
-                        reasons["gender_mismatch"] = 0.18
 
-                # style bonus (text query) - skip for footwear to reduce compute
+                    # Strong mismatch: drop to avoid returning the wrong-gender outfits at the top.
+                    if gender == "female" and (male_s > female_s + 0.12):
+                        await bump("gender_mismatch_hard")
+                        return None
+                    if gender == "male" and (female_s > male_s + 0.12):
+                        await bump("gender_mismatch_hard")
+                        return None
+
+                    # Mild mismatch: keep but penalize so it won't dominate the top ranks.
+                    if gender == "female" and (male_s > female_s + 0.06):
+                        penalty += 0.35
+                        reasons["gender_mismatch"] = 0.35
+                    elif gender == "male" and (female_s > male_s + 0.06):
+                        penalty += 0.35
+                        reasons["gender_mismatch"] = 0.35
+
+                    reasons["gender_scores"] = {"male": round(male_s, 4), "female": round(female_s, 4), "conf": round(float(gender_conf), 4)}
+
+                # Style score: heavy + marginal gain. Keep but very light (1 prompt) and skip footwear.
                 style_score = 0.0
                 if user_q and category != "footwear":
-                    style_prompts = [
-                        f"a full body {user_q} outfit photo",
-                        f"a {user_q} street fashion lookbook",
-                        f"a fashion style of {user_q}",
-                    ]
-                    style_score = float(max(clip_scores_fast(person_crop, style_prompts)))
+                    sp = [f"a {user_q} outfit photo"]
+                    style_score = float(np.max(clip_sims_from_feat(clip_image_features(person_crop), sp)))
 
                 # portrait bonus
                 ar = img.height / max(1, img.width)
                 ar_score = ar if ar >= 1.0 else 0.90
 
-                # global embed (for last-resort topN)
+                # Global similarity for last-resort (use person_crop feature)
                 global_crop = person_crop if used_person else center_square_crop(img, 0.90)
-                cand_global_embed = clip_image_embed(global_crop)
-                sim_global = cos_sim(user_item_embed, cand_global_embed)
+                global_feat = clip_image_features(global_crop)
+                sim_global = float((global_feat @ user_item_feat.T).squeeze().detach().float().cpu().item())
 
-                # base_rank = similarity + signals - penalty
                 base_rank = (
                     1.70 * sim_region +
                     0.22 * pos_outfit +
@@ -1259,9 +1431,30 @@ async def score_candidates(
             await bump("process_exception")
             return None
 
-    results = await asyncio.gather(*(process_one(c) for c in cands), return_exceptions=False)
-    ok = [r for r in results if r is not None]
-    return ok, dict(sorted(drop_counts.items(), key=lambda kv: kv[1], reverse=True))
+    # Process in small waves to allow early-stop
+    results: List[ScoredCand] = []
+    idx = 0
+    wave = max(8, concurrency * 3)
+
+    while idx < len(cands):
+        # soft time budget
+        if (time.time() - t_start) > time_budget_sec and len(results) >= 8:
+            break
+
+        chunk = cands[idx: idx + wave]
+        idx += wave
+
+        outs = await asyncio.gather(*(process_one(c) for c in chunk), return_exceptions=False)
+        for r in outs:
+            if r is not None:
+                results.append(r)
+
+        # If we already have enough high-quality (tier A) candidates, stop earlier.
+        if len([r for r in results if r.penalty <= PASSED_PENALTY_MAX]) >= 10:
+            if (time.time() - t_start) > (time_budget_sec * 0.55):
+                break
+
+    return results, dict(sorted(drop_counts.items(), key=lambda kv: kv[1], reverse=True))
 
 
 # =========================
@@ -1285,6 +1478,9 @@ async def recommend_image(
     request_id = requestId.strip() if (requestId and requestId.strip()) else f"ui-{int(time.time()*1000)}"
     category_mapped = map_category(category)
     gender_mapped = map_gender(gender)
+    if gender_mapped == "unknown":
+        gender_mapped = infer_gender_from_text(textQuery)
+    styles_norm = normalize_style(stylePref)
 
     file_bytes = await image.read()
     user_img = _safe_open_image(file_bytes)
@@ -1307,12 +1503,18 @@ async def recommend_image(
     item_kr_list = best_item["kr"]
     item_part = best_item["part"]
 
+    # If UI didn't pass a category (or it mapped to unknown), infer one from taxonomy.
+    inferred_category = infer_category_from_taxonomy(item_en, item_part)
+    if category_mapped in {"", "unknown"}:
+        category_mapped = inferred_category
+        warnings.append(f"Category inferred: {category_mapped}")
+
     if user_person_crop is not None:
         user_item_crop = crop_region_by_part(user_person_crop, item_part)
     else:
         user_item_crop = center_square_crop(user_img, 0.85)
 
-    user_item_embed = clip_image_embed(user_item_crop)
+    user_item_feat = clip_image_features(user_item_crop)  # [1,d] normalized on DEVICE
 
     normalized_color = normalize_color(userColor)
     # If user did not specify a color explicitly, honor strong color keywords in the query/title.
@@ -1338,7 +1540,14 @@ async def recommend_image(
             # if user uploaded a person-wearing image, use that; else use item crop
             coat_length = infer_coat_length_from_image(user_base_for_clip)
 
-    search_query = build_search_query(textQuery, category_mapped, gender_mapped, normalized_color, coat_length)
+    search_query = build_search_query(
+        textQuery,
+        category_mapped,
+        gender_mapped,
+        normalized_color,
+        coat_length,
+        style_pref=stylePref,
+    )
 
     item_kor = item_kr_list[0] if item_kr_list else "패션"
     color_kor = KOREAN_COLOR_KEYWORDS.get(normalized_color, "") if normalized_color else ""
@@ -1376,14 +1585,25 @@ async def recommend_image(
         final_n = MAX_RETURN
 
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=True, headers=DEFAULT_HEADERS) as client:
+        style_rank_prompt = ""
+        if styles_norm:
+            # If UI supports multi-select, take the first as the primary for ranking.
+            sp = styles_norm[0]
+            style_rank_prompt = {
+                "minimal": "a clean minimal outfit, simple silhouette, neutral colors",
+                "classic": "a classic tailored outfit, neat, timeless styling",
+                "street": "a streetwear outfit, urban style, trendy casual",
+                "casual": "a casual everyday outfit, comfortable daily look",
+            }.get(sp, "")
+
         scored, drop_counts = await score_candidates(
             candidates,
             category=category_mapped,
             gender=gender_mapped,
             normalized_color=normalized_color,
             coat_length=coat_length,
-            user_item_embed=user_item_embed,
-            user_q=textQuery or "",
+            user_item_feat=user_item_feat,
+            user_q=style_rank_prompt or (textQuery or ""),
             item_en=item_en,
             item_part=item_part,
             client=client,
@@ -1395,6 +1615,11 @@ async def recommend_image(
         latency = time.time() - t0
         return JSONResponse({
             "requestId": request_id,
+            "normalized": {
+                "category": category_mapped or "unknown",
+                "color": normalized_color or "unknown",
+                "style": (styles_norm[0] if styles_norm else "unknown"),
+            },
             "query": search_query,
             "category": category_mapped if category_mapped else category,
             "gender": gender_mapped if gender_mapped else gender,
@@ -1444,7 +1669,7 @@ async def recommend_image(
         for s in lst:
             if len(selected) >= need:
                 break
-            if s.url in used_urls:
+            if canonicalize_url(s.url) in used_urls:
                 continue
             # Don't let salvage override item type for key categories.
             pr = (s.debug or {}).get("penaltyReasons", {}) if isinstance(s.debug, dict) else {}
@@ -1461,7 +1686,7 @@ async def recommend_image(
                     if gender_mapped == "male" and (female_s > male_s + 0.06):
                         continue
             selected.append(s)
-            used_urls.add(s.url)
+            used_urls.add(canonicalize_url(s.url))
 
     take_from(passed, final_n)
 
@@ -1470,14 +1695,14 @@ async def recommend_image(
 
     # Last resort: CLIP similarity top-N among all downloaded (tier C)
     if len(selected) < final_n:
-        remaining = [s for s in tier_c if s.url not in used_urls]
+        remaining = [s for s in tier_c if canonicalize_url(s.url) not in used_urls]
         remaining.sort(key=lambda x: x.sim_global, reverse=True)
         for s in remaining:
             if len(selected) >= final_n:
                 break
             s.tier = "C"
             selected.append(s)
-            used_urls.add(s.url)
+            used_urls.add(canonicalize_url(s.url))
 
     # If still not enough (rare): allow duplicates to force 8
     if len(selected) < final_n:
@@ -1500,30 +1725,48 @@ async def recommend_image(
             selected.append(s2)
             i += 1
 
-    # finalize
-    items_out = []
-    for i, s in enumerate(selected[:final_n], start=1):
+
+    # finalize (dedupe by canonical URL)
+    items_out: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    rank = 1
+    for s in selected:
+        if len(items_out) >= final_n:
+            break
         it = s.it
         url = it.get("link") or ""
+        if not url:
+            continue
+        key = canonicalize_url(url)
+        if key in seen:
+            continue
+        seen.add(key)
         landing = it.get("originallink") or url
         thumb = it.get("thumbnail") or url
         items_out.append({
-            "rank": i,
-            "tier": s.tier,
-            "rankScore": float(s.base_rank),
-            "penalty": float(s.penalty),
+            "rank": rank,
+            "tier": getattr(s, "tier", "C"),
+            "rankScore": float(getattr(s, "rank_score", getattr(s, "score", 0.0))),
+            "penalty": float(getattr(s, "penalty", 0.0)),
             "imageUrl": url,
-            "thumbUrl": thumb,
-            "landingUrl": landing,
+            "thumbnailUrl": thumb,
             "title": (it.get("title") or ""),
             "source": it.get("_source", "unknown"),
-            "debug": s.debug,
+            "strict": False,
+            "score": float(getattr(s, "rank_score", getattr(s, "score", 0.0)) or 0.0),
+            "debug": getattr(s, "debug", {}),
         })
+        rank += 1
 
     latency = time.time() - t0
     gate_used = "A_then_B_then_C"
     return JSONResponse({
         "requestId": request_id,
+        "normalized": {
+            "category": category_mapped or "unknown",
+            "color": normalized_color or "unknown",
+            "style": (styles_norm[0] if styles_norm else "unknown"),
+        },
         "query": search_query,
         "category": category_mapped if category_mapped else category,
         "gender": gender_mapped if gender_mapped else gender,
@@ -1589,182 +1832,15 @@ async def recommend_image_alias(
         category=category,
         gender=gender,
         userColor=userColor,
+        nickname=nickname,
+        stylePref=stylePref,
     )
 
-
 # =========================
-# API: LLM CHAT (OpenAI Responses API)
+# ROUTES: Chat (split)
 # =========================
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-
-
-# ---------
-# Followup schema (front 유지)
-# ---------
-class FollowupReq(BaseModel):
-    text: str
-    requestId: Optional[str] = None
-    items: List[Dict[str, Any]] = Field(default_factory=list)
-    category: Optional[str] = ""
-    gender: Optional[str] = ""
-
-class FollowupResp(BaseModel):
-    answer: str
-    requestId: Optional[str] = None
-
-# 기존 /chat 용
-class ChatReq(BaseModel):
-    messages: List[Dict[str, str]]
-    system: Optional[str] = None
-
-class ChatResp(BaseModel):
-    reply: str
-
-
-# ---------
-# guard: 패션/코디/앱 맥락 외 질문 차단
-# ---------
-FASHION_KEYWORDS = [
-    "코디", "패션", "옷", "착장", "룩", "스타일", "스타일링", "핏", "무드",
-    "상의", "하의", "아우터", "자켓", "코트", "신발", "운동화", "가방",
-    "색", "컬러", "블랙", "화이트", "베이지", "브라운", "네이비",
-    "데일리룩", "스트릿", "미니멀", "캐주얼", "포멀", "오피스룩", "데이트룩",
-    "코디추천", "룩북", "스냅", "ootd",
-    "추천", "후보", "1번", "2번", "3번", "첫번째", "두번째", "세번째",
-    "이거 어울려", "매치", "조합", "어떻게 입", "뭐 입", "설명해줘",
-]
-
-def _is_fashion_query(text: str) -> bool:
-    t = (text or "").strip().lower()
-    if not t:
-        return False
-    # 숫자만 보내는 경우(예: "1", "1번")는 코디 설명으로 간주
-    if t in {"1", "2", "3", "4", "5", "6", "7", "8"}:
-        return True
-    # 키워드 포함 여부
-    for kw in FASHION_KEYWORDS:
-        if kw.lower() in t:
-            return True
-    return False
-
-
-# ---------
-# OpenAI call
-# ---------
-async def call_openai_responses(messages: List[Dict[str, str]], system: Optional[str] = None) -> str:
-    if not OPENAI_API_KEY:
-        raise RuntimeError("Missing OPENAI_API_KEY")
-
-    input_items: List[Dict[str, str]] = []
-    if system:
-        input_items.append({"role": "system", "content": system})
-    input_items.extend(messages)
-
-    payload = {"model": OPENAI_MODEL, "input": input_items}
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        r = await client.post(f"{OPENAI_BASE_URL}/responses", headers=headers, json=payload)
-        r.raise_for_status()
-        data = r.json()
-
-    reply = data.get("output_text")
-    if isinstance(reply, str) and reply.strip():
-        return reply.strip()
-
-    out = data.get("output", [])
-    texts: List[str] = []
-    if isinstance(out, list):
-        for item in out:
-            if not isinstance(item, dict):
-                continue
-            if item.get("type") == "message":
-                content = item.get("content", [])
-                if isinstance(content, list):
-                    for part in content:
-                        if isinstance(part, dict) and part.get("type") == "output_text":
-                            t = part.get("text", "")
-                            if t:
-                                texts.append(t)
-    return "\n".join(texts).strip()
-
-
-# ---------
-# /api/v1/chat : 추천 결과(items) 기반 "코디 설명" 전용
-# ---------
-@app.post("/api/v1/chat", response_model=FollowupResp)
-async def chat_followup(req: FollowupReq):
-    # 1) 패션/코디 외 질문 차단
-    if not _is_fashion_query(req.text):
-        return FollowupResp(
-            answer="나는 이 앱에서는 패션/코디(추천 결과 설명, 스타일 조합, 착장 해석) 관련 질문만 도와줄 수 있어. 코디/스타일 질문으로 다시 말해줘!",
-            requestId=req.requestId,
-        )
-
-    # 2) items 컨텍스트 만들기 (다운로드/이미지 열람 없이 메타만)
-    #    - 프론트는 items 배열을 그대로 보내므로 여기서 title/source/tier/score/url 정도만 사용
-    items = req.items or []
-    lines = []
-    for i, it in enumerate(items[:8], start=1):
-        title = (it.get("title") or "").strip()
-        source = (it.get("source") or it.get("_source") or "").strip()
-        tier = (it.get("tier") or "").strip()
-        score = it.get("rankScore")
-        url = (it.get("imageUrl") or "").strip()
-
-        lines.append(f"{i}) title={title} | source={source} | tier={tier} | score={score} | url={url}")
-
-    items_ctx = "\n".join(lines) if lines else "(no items)"
-
-    # 3) system: 역할/제약/출력 규칙
-    system = f"""
-너는 패션 코디 추천 앱의 '후속 설명' 어시스턴트야.
-
-제약:
-- 이미지를 직접 보지 못한다. (다운로드/열람/스크린샷 상상 금지)
-- 대신 사용자가 방금 본 추천 결과의 메타데이터(items)를 제공받는다.
-- 메타(제목/소스/티어/점수) 기반으로 합리적으로 추정해서 설명한다.
-- 과장하거나 "사진에서 보이는" 같은 표현은 금지. 반드시 "메타 기준으로 보면" 톤을 써라.
-
-사용자 요청 처리:
-- 사용자가 "첫번째/1번" 등 번호를 말하면 해당 번호 후보를 중심으로 설명.
-- 번호가 없으면 1번을 기본으로 설명.
-- 답변 형식(짧게 4~8문장):
-  1) 한 줄로 무드 요약
-  2) 상의/하의/신발/아우터 중 핵심 포인트 2~3개
-  3) 어울리는 상황(데이트/출근/데일리 등) 1~2개
-  4) 사용자가 다음에 바꾸면 좋은 옵션(색/핏/아이템) 1개 제안
-
-추가 힌트:
-- category={req.category}
-- gender={req.gender}
-
-추천 후보(items):
-{items_ctx}
-""".strip()
-
-    msgs = [{"role": "user", "content": req.text}]
-    reply = await call_openai_responses(msgs, system=system)
-
-    return FollowupResp(answer=reply, requestId=req.requestId)
-
-
-# ---------
-# 기존 범용 /chat 은 유지하되, 여기서도 패션만 허용하고 싶으면 동일 guard 적용 가능
-# ---------
-@app.post("/chat", response_model=ChatResp)
-async def chat(req: ChatReq):
-    # 선택: 범용 /chat도 패션 외 차단하고 싶으면 아래 켜기
-    # last = (req.messages[-1]["content"] if req.messages else "") if req.messages else ""
-    # if not _is_fashion_query(last):
-    #     return ChatResp(reply="이 서버의 /chat은 패션/코디 관련 대화만 지원해.")
-
-    reply = await call_openai_responses(req.messages, req.system)
-    return ChatResp(reply=reply)
-
-
+from routes_chat import router as chat_router  # noqa: E402
+app.include_router(chat_router)
 
 # python -m uvicorn main:app --reload
 # python -m uvicorn main:app --host 0.0.0.0 --port 8000 --log-level debug

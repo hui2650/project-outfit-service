@@ -49,7 +49,7 @@ const ResultCarousel = ({ items = [] }) => {
         className="pb-12" // 하단 스크롤바 공간 확보
       >
         {items.map((it, idx) => (
-          <SwiperSlide key={it.itemKey || idx} className="h-auto">
+          <SwiperSlide key={`${it.itemKey || it.imageUrl || it.landingUrl}-${idx}`}>
             <ResultCard item={it} onClick={() => setSelectedIndex(idx)} />
           </SwiperSlide>
         ))}
