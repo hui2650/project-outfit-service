@@ -36,7 +36,10 @@ public class FastApiClient {
             String category,
             String gender,
             String textQuery,
-            String metaJson
+            String metaJson,
+            String guestId,
+            String nickname,
+            String style
     ) {
         MultipartBodyBuilder body = new MultipartBodyBuilder();
 
@@ -56,6 +59,9 @@ public class FastApiClient {
         body.part("textQuery", textQuery != null ? textQuery : "");
         body.part("category", category != null ? category : "");
         body.part("gender", gender != null ? gender : "");
+        body.part("guestId", guestId == null ? "" : guestId);
+        body.part("nickname", nickname == null ? "" : nickname);
+        body.part("style", style == null ? "" : style);
 
         if (metaJson != null && !metaJson.isBlank()) {
             body.part("meta", metaJson);
@@ -65,7 +71,10 @@ public class FastApiClient {
                 recommendPath, requestId, limit, safe,
                 (textQuery == null ? "" : textQuery),
                 (category == null ? "" : category),
-                (gender == null ? "" : gender)
+                (gender == null ? "" : gender),
+                (guestId == null ? "" : guestId),
+                (nickname == null ? "" : nickname),
+                (style == null ? "" : style)
         );
 
         return fastApiWebClient.post()

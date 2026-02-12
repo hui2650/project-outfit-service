@@ -21,11 +21,13 @@ public class RecommendController {
             @RequestParam(value = "limit", defaultValue = "8") int limit,
             @RequestParam(value = "safe", defaultValue = "true") boolean safe,
             @RequestParam(value = "category", required = false) String category,
-            @RequestParam(value = "gender", required = false) String gender
-
+            @RequestParam(value = "gender", required = false) String gender,
+            @RequestParam(value = "guestId", required = false) String guestId,
+            @RequestParam(value = "nickname", required = false) String nickname,
+            @RequestParam(value = "style", required = false) String style
 
             
     ) {
-        return recommendService.getRecommendations(image, textQuery, limit, safe, category, gender);
+        return recommendService.getRecommendations(image, textQuery, limit, safe, category, gender, guestId, nickname, style);
     }
 }
