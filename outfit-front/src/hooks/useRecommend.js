@@ -34,7 +34,7 @@ export const useRecommend = ({ updateTurn, onHistoryTurn }) => {
     });
 
     // 타임아웃(무한 로딩 방지)
-    const TIMEOUT_MS = 25000;
+    const TIMEOUT_MS = 60000;
 
     // 타임아웃 Promise
     const timeoutPromise = new Promise((_, reject) => {
