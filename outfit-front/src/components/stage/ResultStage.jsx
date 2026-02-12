@@ -38,8 +38,8 @@ const ResultStage = ({
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 ">
-      {/*  스크롤 영역 */}
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* 스크롤 영역 */}
       <div
         className={`h-full px-4 ${
           isOnlyLoading
@@ -56,10 +56,8 @@ const ResultStage = ({
         </div>
         <ChatComposer disabled={chatDisabled} onSend={onSendChat} />
       </div>
-<<<<<<< Updated upstream
+
       <ChatComposer disabled={chatDisabled} onSend={onSendChat} />
-=======
->>>>>>> Stashed changes
     </div>
   );
 };

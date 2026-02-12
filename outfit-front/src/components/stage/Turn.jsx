@@ -4,7 +4,7 @@ import OutfitLoadingMark from "../common/OutfitLoadingMark";
 import AIMessage from "./AIMessage";
 import ChatPreview from "./ChatPreview";
 
-const Turn = ({ turn }) => {
+const Turn = ({ turn, onSelectItem }) => {
   /* ===============================
      로딩 전용 Turn
      =============================== */
@@ -34,17 +34,11 @@ const Turn = ({ turn }) => {
         }
 
         // 텍스트 메시지
-<<<<<<< Updated upstream
-        if (msg.type === 'text') {
-          return (
-            <AIMessage key={msg.id} content={msg.content} role={msg.role} />
-          )
-=======
         if (msg.type === "text") {
           return (
             <AIMessage key={msg.id} content={msg.content} role={msg.role} />
           );
->>>>>>> Stashed changes
+          return <AIMessage key={msg.id} content={msg.content} role={msg.role} />
         }
 
         // 결과 캐러셀
@@ -55,17 +49,11 @@ const Turn = ({ turn }) => {
         }
 
         // 에러
-<<<<<<< Updated upstream
-        if (msg.type === 'error') {
-          return (
-            <AIMessage key={msg.id} content={msg.message} variant="error" />
-          )
-=======
         if (msg.type === "error") {
           return (
             <AIMessage key={msg.id} content={msg.message} variant="error" />
           );
->>>>>>> Stashed changes
+          return <AIMessage key={msg.id} content={msg.message} variant="error" />
         }
 
         return null;

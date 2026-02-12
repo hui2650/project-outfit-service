@@ -1,6 +1,7 @@
 // src/hooks/useRecommend.js
-import { recommendByImage } from '../api/recommend'
-import { uid } from '../utils/uid'
+import { recommendByImage } from "../api/recommend";
+import { useAppData } from "../store/appDataStore";
+import { uid } from "../utils/uid";
 
 /**
  * useRecommend({ updateTurn, onHistoryTurn })
@@ -65,6 +66,8 @@ const pickAssistantMessage = ({ category, gender, textQuery, itemsLen }) => {
 };
 
 export const useRecommend = ({ updateTurn, onHistoryTurn }) => {
+  const { guest } = useAppData();
+
   const requestRecommend = async ({
     turnId,
     file,
@@ -72,61 +75,67 @@ export const useRecommend = ({ updateTurn, onHistoryTurn }) => {
     category,
     gender,
   }) => {
-    console.groupCollapsed(`🧠 [useRecommend] turnId=${turnId}`)
-    console.log('▶️ start', {
+    console.groupCollapsed(`🧠 [useRecommend] turnId=${turnId}`);
+    console.log("▶️ start", {
       file: file ? { name: file.name, type: file.type, size: file.size } : null,
       textQuery,
       category,
       gender,
-    })
+    });
 
     // 타임아웃(무한 로딩 방지)
-<<<<<<< Updated upstream
-    const TIMEOUT_MS = 25000
-=======
     const TIMEOUT_MS = 60000;
->>>>>>> Stashed changes
+    
 
     // 타임아웃 Promise
     const timeoutPromise = new Promise((_, reject) => {
       const id = setTimeout(() => {
-        clearTimeout(id)
-        reject(new Error('TIMEOUT'))
-      }, TIMEOUT_MS)
-    })
+        clearTimeout(id);
+        reject(new Error("TIMEOUT"));
+      }, TIMEOUT_MS);
+    });
 
     try {
       // 1) 서버 호출 (+ 타임아웃 레이스)
       const resp = await Promise.race([
-        recommendByImage(file, 8, textQuery, category, gender),
+        recommendByImage(
+          file,
+          8,
+          textQuery,
+          category,
+          gender,
+          guest?.guestId ?? null,
+          guest?.nickname ?? "",
+          guest?.style ?? "",
+        ),
         timeoutPromise,
-      ])
-      console.log(' resp received:', resp)
+      ]);
+      console.log(" resp received:", resp);
 
       // 2) JSON 에러 포맷으로 온 경우
       if (resp?.error) {
         updateTurn(turnId, (t) => ({
           ...t,
-          status: 'error',
+          status: "error",
           error: resp.error,
           messages: [
             ...t.messages,
-            { id: uid(), role: 'assistant', type: 'error', ...resp.error },
+            { id: uid(), role: "assistant", type: "error", ...resp.error },
           ],
-        }))
-        return
+        }));
+        return;
       }
 
       // 3) 성공
-      const requestId = resp?.requestId ?? null
+      const requestId = resp?.requestId ?? null;
 
       const itemsWithKey = (resp?.items ?? []).map((it, idx) => ({
         ...it,
         itemKey:
           it.itemKey ??
           it.imageUrl ??
-          `${turnId}_${requestId ?? 'noReq'}_${it.rank ?? idx}`,
-      }))
+          `${turnId}_${requestId ?? "noReq"}_${it.rank ?? idx}`,
+      }));
 
       onHistoryTurn?.({
         turnId,
@@ -141,22 +150,16 @@ export const useRecommend = ({ updateTurn, onHistoryTurn }) => {
             : null,
         },
         items: itemsWithKey,
-      })
+      });
 
       updateTurn(turnId, (t) => ({
         ...t,
-        status: 'done',
+        status: "done",
         requestId,
         messages: [
           ...t.messages,
           {
             id: uid(),
-<<<<<<< Updated upstream
-            role: 'assistant',
-            type: 'text',
-            content:
-              '이 아이템이면 이런 느낌이 잘 어울려. 아래 후보 중 골라봐!',
-=======
             role: "assistant",
             type: "text",
             content: pickAssistantMessage({
@@ -165,40 +168,27 @@ export const useRecommend = ({ updateTurn, onHistoryTurn }) => {
               textQuery,
               itemsLen: itemsWithKey.length,
             }),
->>>>>>> Stashed changes
-          },
           {
             id: uid(),
-            role: 'assistant',
-            type: 'carousel',
+            role: "assistant",
+            type: "carousel",
             requestId,
             items: itemsWithKey,
           },
         ],
-      }))
+      }));
     } catch (e) {
-      console.log(' requestRecommend error:', e)
+      console.log(" requestRecommend error:", e);
 
       //  에러 분기(타임아웃 vs 일반 네트워크)
       const isTimeout =
-        e?.message === 'TIMEOUT' ||
-        String(e?.message || '')
+        e?.message === "TIMEOUT" ||
+        String(e?.message || "")
           .toUpperCase()
-          .includes('TIMEOUT')
+          .includes("TIMEOUT");
 
       const err = isTimeout
         ? {
-<<<<<<< Updated upstream
-            code: 'TIMEOUT',
-            message: `응답이 너무 오래 걸려서 중단했어. (약 ${Math.round(
-              TIMEOUT_MS / 1000
-            )}초) 서버가 켜져 있는지 확인하고 다시 시도해줘.`,
-          }
-        : {
-            code: 'NETWORK_ERROR',
-            message: '서버 연결이 불안정해. 다시 시도해줘.',
-          }
-=======
             code: "TIMEOUT",
             message: `응답이 너무 오래 걸려서 중단되었습니다. (약 ${Math.round(
               TIMEOUT_MS / 1000,
@@ -208,24 +198,23 @@ export const useRecommend = ({ updateTurn, onHistoryTurn }) => {
             code: "NETWORK_ERROR",
             message: "서버 연결이 불안정합니다. 다시 시도해주세요.",
           };
->>>>>>> Stashed changes
 
       updateTurn(turnId, (t) => ({
         ...t,
-        status: 'error',
+        status: "error",
         error: err,
         messages: [
           ...t.messages,
-          { id: uid(), role: 'assistant', type: 'error', ...err },
+          { id: uid(), role: "assistant", type: "error", ...err },
         ],
-      }))
+      }));
 
       // 호출부에서 필요하면 잡을 수 있게 throw 유지
-      throw e
+      throw e;
     } finally {
-      console.groupEnd()
+      console.groupEnd();
     }
-  }
+  };
 
-  return { requestRecommend }
-}
+  return { requestRecommend };
+};

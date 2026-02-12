@@ -30,7 +30,10 @@ public class RecommendService {
             int limit,
             boolean safe,
             String category,
-            String gender
+            String gender,
+            String guestId,
+            String nickname,
+            String style
     ) {
         String requestId = "req_" + UUID.randomUUID().toString().substring(0, 8);
         int finalLimit = clamp(limit, 1, 12, 8);
@@ -46,7 +49,10 @@ public class RecommendService {
                         category,
                         gender,
                         textQuery,
-                        metaJson
+                        metaJson,
+                        guestId,
+                        nickname,
+                        style
                 )
                 .block();
 

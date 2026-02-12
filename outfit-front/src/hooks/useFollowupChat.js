@@ -1,34 +1,34 @@
 // src/hooks/useFollowupChat.js
-import { askFollowup } from '../api/chat'
-import { uid } from '../utils/uid'
+import { askFollowup } from "../api/chat";
+import { uid } from "../utils/uid";
+import { useAppData } from "../store/appDataStore.jsx";
 
 export const useFollowupChat = ({ updateTurn }) => {
+  const { guest } = useAppData();
+
   const sendChat = async ({
     turnId,
     text,
     requestId = null,
     items = [],
-<<<<<<< Updated upstream
-    category = '',
-    gender = '',
-=======
     category = "",
     gender = "",
     messages = [],
->>>>>>> Stashed changes
+    category = "",
+    gender = "",
   }) => {
-    const userMsgId = uid()
-    const assistantMsgId = uid()
+    const userMsgId = uid();
+    const assistantMsgId = uid();
 
     // 1) UI에 먼저 user 메시지 + assistant placeholder 추가
     updateTurn(turnId, (t) => ({
       ...t,
       messages: [
         ...t.messages,
-        { id: userMsgId, role: 'user', type: 'text', content: text },
-        { id: assistantMsgId, role: 'assistant', type: 'text', content: '…' }, // 로딩 표시
+        { id: userMsgId, role: "user", type: "text", content: text },
+        { id: assistantMsgId, role: "assistant", type: "text", content: "…" }, // 로딩 표시
       ],
-    }))
+    }));
 
     try {
       const resp = await askFollowup({
@@ -37,15 +37,14 @@ export const useFollowupChat = ({ updateTurn }) => {
         items,
         category,
         gender,
-<<<<<<< Updated upstream
-      })
-=======
         guestId: guest?.guestId ?? null,
         nickname: guest?.nickname ?? "",
         style: guest?.style ?? "",
         chatLogs: messages,
+        guestId: guest?.guestId ?? null,
+        nickname: guest?.nickname ?? "",
+        style: guest?.style ?? "",
       });
->>>>>>> Stashed changes
 
       if (resp?.error) {
         // placeholder를 에러로 치환
@@ -55,30 +54,27 @@ export const useFollowupChat = ({ updateTurn }) => {
             m.id === assistantMsgId
               ? {
                   id: m.id,
-                  role: 'assistant',
-                  type: 'error',
+                  role: "assistant",
+                  type: "error",
                   message: resp.error.message,
                   code: resp.error.code,
                 }
-              : m
+              : m,
           ),
-        }))
-        return
+        }));
+        return;
       }
 
-<<<<<<< Updated upstream
-      const answer = resp?.answer ?? '답변을 생성하지 못했어.'
-=======
       const answer = resp?.answer ?? "답변을 생성하지 못했습니다.";
->>>>>>> Stashed changes
+
 
       // 2) placeholder를 진짜 답변으로 치환
       updateTurn(turnId, (t) => ({
         ...t,
         messages: t.messages.map((m) =>
-          m.id === assistantMsgId ? { ...m, type: 'text', content: answer } : m
+          m.id === assistantMsgId ? { ...m, type: "text", content: answer } : m,
         ),
-      }))
+      }));
     } catch (e) {
       updateTurn(turnId, (t) => ({
         ...t,
@@ -86,23 +82,16 @@ export const useFollowupChat = ({ updateTurn }) => {
           m.id === assistantMsgId
             ? {
                 id: m.id,
-<<<<<<< Updated upstream
-                role: 'assistant',
-                type: 'error',
-                message: '서버 연결이 불안정해',
-                code: 'NETWORK_ERROR',
-=======
                 role: "assistant",
                 type: "error",
                 message: "서버 연결이 불안정합니다.",
                 code: "NETWORK_ERROR",
->>>>>>> Stashed changes
               }
-            : m
+            : m,
         ),
-      }))
+      }));
     }
-  }
+  };
 
-  return { sendChat }
-}
+  return { sendChat };
+};

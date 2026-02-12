@@ -20,9 +20,14 @@ outfit-back/.env.*
 # --- Python/FastAPI ---
 outfit-py/__pycache__/
 outfit-py/.venv/
+
 outfit-py/.env
 outfit-py/.env.*
+
+!outfit-py/.env.example
+
 *.pyc
+
 
 # --- Logs ---
 *.log

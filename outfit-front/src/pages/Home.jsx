@@ -4,7 +4,7 @@ import ResultStage from "../components/stage/ResultStage";
 import SidePanel from "../components/panel/sidepanel/SidePanel.jsx";
 import SessionPanel from "../components/panel/sidepanel/SessionPanel.jsx";
 
-import { ChatPageProvider, useChatPage } from "./chat/ChatPageContext.jsx"; // 경로 맞춰
+import { ChatPageProvider, useChatPage } from "./chat/ChatPageContext.jsx";
 
 const HomeInner = () => {
   const {
