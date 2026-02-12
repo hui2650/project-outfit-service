@@ -986,7 +986,12 @@ async def recommend_image(
     category: str = Form(""),
     gender: str = Form(""),
     userColor: str = Form(""),
+    guestId: str = Form(""),      
+    nickname: str = Form(""),     
+    style: str = Form(""),        
+
 ):
+    print("[GUEST]", guestId, nickname, style)
     t0 = time.time()
     warnings: List[str] = []
 
@@ -1034,15 +1039,28 @@ async def recommend_image(
             warnings.append("Color not recognized/inferred -> color penalty skipped.")
     else:
         warnings.append(f"Color normalized: {userColor} -> {normalized_color}")
+    
+    style_norm = (style or "").strip().lower()
+    STYLE_KW = {
+        "minimal": "미니멀",
+        "casual": "캐주얼 데일리",
+        "street": "스트릿 스냅",
+        "classic": "클래식 포멀",
+    }
+    style_kor = STYLE_KW.get(style_norm, "")
 
-    search_query = build_search_query(textQuery, category_mapped, gender_mapped, normalized_color)
+    # textQuery 보강: 사용자가 말을 안 해도 스타일이 검색어에 반영됨
+    textQuery_eff = " ".join([x for x in [style_kor, textQuery] if x]).strip()
+
+
+    search_query = build_search_query(textQuery_eff, category_mapped, gender_mapped, normalized_color)
 
     item_kor = item_kr_list[0] if item_kr_list else "패션"
     color_kor = KOREAN_COLOR_KEYWORDS.get(normalized_color, "") if normalized_color else ""
-    q1 = f"{color_kor} {item_kor} 전신 착샷 코디 룩북 무신사 스냅 OOTD 착용 {textQuery}".strip()
-    q2 = f"{color_kor} {item_kor} 데일리룩 스트릿 스냅 전신 코디 착용 {textQuery}".strip()
-    q3 = f"{item_kor} 전신 코디 착샷 룩북 무신사 스냅 착용 {textQuery}".strip()
-    q4 = f"{item_kor} 코디 전신 OOTD 스트릿룩 착용 {textQuery}".strip()
+    q1 = f"{color_kor} {item_kor} 전신 착샷 코디 룩북 무신사 스냅 OOTD 착용 {textQuery_eff}".strip()
+    q2 = f"{color_kor} {item_kor} 데일리룩 스트릿 스냅 전신 코디 착용 {textQuery_eff}".strip()
+    q3 = f"{item_kor} 전신 코디 착샷 룩북 무신사 스냅 착용 {textQuery_eff}".strip()
+    q4 = f"{item_kor} 코디 전신 OOTD 스트릿룩 착용 {textQuery_eff}".strip()
     queries = [q1, q2, q3, q4]
 
     candidates = await search_multi_sources(queries)
@@ -1067,7 +1085,7 @@ async def recommend_image(
             gender=gender_mapped,
             normalized_color=normalized_color,
             user_item_embed=user_item_embed,
-            user_q=textQuery or "",
+            user_q=textQuery_eff or "",
             item_en=item_en,
             item_part=item_part,
             client=client,
@@ -1106,6 +1124,11 @@ async def recommend_image(
             "warnings": warnings + ["No downloadable candidates."],
             "device": DEVICE,
             "latencySec": round(float(latency), 2),
+            "guest": {
+                "guestId": guestId,
+                "nickname": nickname,
+                "style": style,
+            },
         })
 
     # Build passed + salvaged
@@ -1231,6 +1254,11 @@ async def recommend_image(
         "warnings": warnings,
         "device": DEVICE,
         "latencySec": round(float(latency), 2),
+        "guest": {
+            "guestId": guestId,
+            "nickname": nickname,
+            "style": style,
+        },
     })
 
 
@@ -1243,6 +1271,9 @@ async def recommend_image_alias(
     category: str = Form(""),
     gender: str = Form(""),
     userColor: str = Form(""),
+    guestId: str = Form(""),   
+    nickname: str = Form(""),  
+    style: str = Form(""),     
 ):
     return await recommend_image(
         requestId=requestId,
@@ -1252,6 +1283,9 @@ async def recommend_image_alias(
         category=category,
         gender=gender,
         userColor=userColor,
+        guestId=guestId,      
+        nickname=nickname,    
+        style=style,          
     )
 
 
@@ -1272,6 +1306,11 @@ class FollowupReq(BaseModel):
     items: List[Dict[str, Any]] = Field(default_factory=list)
     category: Optional[str] = ""
     gender: Optional[str] = ""
+    guestId: Optional[str] = ""
+    nickname: Optional[str] = ""
+    style: Optional[str] = ""
+    prevAnswer: Optional[str] = ""  # 이전 답변
+    
 
 class FollowupResp(BaseModel):
     answer: str
@@ -1296,22 +1335,74 @@ FASHION_KEYWORDS = [
     "데일리룩", "스트릿", "미니멀", "캐주얼", "포멀", "오피스룩", "데이트룩",
     "코디추천", "룩북", "스냅", "ootd",
     "추천", "후보", "1번", "2번", "3번", "첫번째", "두번째", "세번째",
-    "이거 어울려", "매치", "조합", "어떻게 입", "뭐 입", "설명해줘",
+    "이거 어울려", "매치", "조합", "어떻게 입", "뭐 입", "뭐입", "설명해줘",
 ]
+
+import re
+
+NUM_PAT = re.compile(r"(?:(\d)\s*번)|(?:^(\d)$)")
+
+ORDINAL_MAP = {
+    "첫번째": 1, "첫째": 1, "1번째": 1,
+    "두번째": 2, "둘째": 2, "2번째": 2,
+    "세번째": 3, "셋째": 3, "3번째": 3,
+    "네번째": 4, "넷째": 4, "4번째": 4,
+    "다섯번째": 5, "5번째": 5,
+    "여섯번째": 6, "6번째": 6,
+    "일곱번째": 7, "7번째": 7,
+    "여덟번째": 8, "8번째": 8,
+}
+
+EVAL_WORDS = [
+    "별로", "구려", "애매", "괜찮", "좋", "맘에", "싫", "취향", "추천", "이유",
+    "뭐가", "나아", "더좋", "고르", "골라", "선택", "비교", "추천왜", "왜이래",
+    "다시", "다른", "바꿔", "바뀌", "이상", "실망", "최악", "별론데",
+]
+
+BODY_WORDS = [
+    "키", "작아", "작은", "크", "큰", "하체", "상체", "어깨", "골반", "허리",
+    "통통", "뚱", "마른", "슬림", "체형", "다리", "팔", "비율",
+]
+
+TPO_WORDS = [
+    "면접", "출근", "오피스", "하객", "데이트", "결혼식", "소개팅", "여행",
+    "모임", "행사", "졸업식", "입학식",
+    "봄", "여름", "가을", "겨울", "환절기", "비오는날", "추워", "더워",
+]
+
+COLOR_WORDS = [
+    "검정", "블랙", "화이트", "흰", "베이지", "브라운", "네이비", "그레이", "회색", "차콜",
+    "파랑", "블루", "초록", "그린", "빨강", "레드", "버건디", "색", "컬러",
+]
+
 
 def _is_fashion_query(text: str) -> bool:
     t = (text or "").strip().lower()
     if not t:
         return False
-    # 숫자만 보내는 경우(예: "1", "1번")는 코디 설명으로 간주
-    if t in {"1", "2", "3", "4", "5", "6", "7", "8"}:
+
+    # 1) 숫자/번호 확장 처리
+    if extract_choice_number(t) is not None:
         return True
-    # 키워드 포함 여부
+
+    # 2) 평가/불만/선택 표현이면 패션 대화로 흡수
+    if any(w in t for w in EVAL_WORDS):
+        return True
+
+    # 3) 체형/상황/TPO도 패션으로 흡수
+    if any(w in t for w in BODY_WORDS) or any(w in t for w in TPO_WORDS):
+        return True
+
+    # 4) 색만 물어봐도 패션으로 흡수 ("검정이 좋아?" 같은 케이스)
+    if any(w in t for w in COLOR_WORDS):
+        return True
+
+    # 5) 기존 패션 키워드(안전장치)
     for kw in FASHION_KEYWORDS:
         if kw.lower() in t:
             return True
-    return False
 
+    return False
 
 # ---------
 # OpenAI call
@@ -1393,7 +1484,7 @@ def _is_greeting(text: str) -> bool:
     if t in {"?", "??", "ㅋ", "ㅎㅎ", "ㅎ", "ㅇㅇ", "ㅇㅋ"}:
         return True
     # 짧은 호출/인사 느낌
-    if len(t) <= 6 and any(x in t.lower() for x in ["안녕", "여보", "hi", "hello", "hey"]):
+    if len(t) <= 6 and any(x in t.lower() for x in ["안녕", "여보", "hi", "hello", "hey", "ㅎㅇ", "하이", "하2"]):
         return True
     return False
 
@@ -1414,15 +1505,91 @@ def _is_help_query(text: str) -> bool:
     if any(k in t for k in ["사용", "방법", "어떻게", "어케", "help", "가이드", "도움말"]):
         if any(k in t for k in ["앱", "서비스", "이거", "여기", "프로그램", "사이트", "너", "봇", "ai"]):
             return True
+        
+    # "태희인데", "나 태희야" 같은 닉네임/정체성 입력도 help로 흡수
+    if any(x in t for x in ["나", "내", "닉", "닉네임"]) and any(x in t for x in ["이름", "태희", "입니다", "야"]):
+        return True
 
     return False
+
+def _is_fashion_query(text: str) -> bool:
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+
+    #  0) "몇번입을까/어느게좋아/뭘입지" 같은 선택 질문은 패션으로 흡수
+    if is_choice_question(t):
+        return True
+
+    # 1) 숫자/번호 확장 처리
+    if extract_choice_number(t) is not None:
+        return True
+
+    # 2) 평가/불만/선택 표현이면 패션 대화로 흡수
+    if any(w in t for w in EVAL_WORDS):
+        return True
+
+    # 3) 체형/상황/TPO도 패션으로 흡수
+    if any(w in t for w in BODY_WORDS) or any(w in t for w in TPO_WORDS):
+        return True
+
+    # 4) 색만 물어봐도 패션으로 흡수
+    if any(w in t for w in COLOR_WORDS):
+        return True
+
+    # 5) 기존 패션 키워드
+    for kw in FASHION_KEYWORDS:
+        if kw.lower() in t:
+            return True
+
+    return False
+
+
+CHOICE_Q_PAT = re.compile(r"(몇\s*번|어느\s*(게|것)|뭐\s*(가|가)\s*좋|뭐\s*입|뭘\s*입|뭐\s*입지|고를까|골라|선택)")
+
+def is_choice_question(text: str) -> bool:
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    # "몇번입을까", "몇 번이 나아?", "어느 게 좋아?" 같은 패턴
+    if CHOICE_Q_PAT.search(t):
+        return True
+    # "번"은 있는데 숫자는 없는 경우(= 사용자가 후보 중 고르라는 의미가 많음)
+    if ("번" in t) and (extract_choice_number(t) is None) and ("몇" in t or "어느" in t or "뭐" in t):
+        return True
+    return False
+
+# 번호 추출 helper
+def extract_choice_number(text: str) -> Optional[int]:
+    t = (text or "").strip().lower()
+    if not t:
+        return None
+
+    # "2번" / "2" / " 2 "
+    m = NUM_PAT.search(t)
+    if m:
+        d = m.group(1) or m.group(2)
+        if d and d.isdigit():
+            n = int(d)
+            if 1 <= n <= 8:
+                return n
+
+    # "두번째" 류
+    for k, v in ORDINAL_MAP.items():
+        if k in t:
+            return v
+
+    return None
 
 
 # ---------
 # /api/v1/chat : 추천 결과(items) 기반 "코디 설명" 전용
 # ---------
 @app.post("/api/v1/chat", response_model=FollowupResp)
+
 async def chat_followup(req: FollowupReq):
+    print(f"[CHAT] guestId={req.guestId} nickname={req.nickname!r} style={req.style!r} text={req.text!r}")
+
     t = (req.text or "").strip()
 
     # 1) 허용 범위: 패션/코디 OR 인사 OR 앱/사용법/정체성
@@ -1449,10 +1616,94 @@ async def chat_followup(req: FollowupReq):
 
     items_ctx = "\n".join(lines) if lines else "(no items)"
 
+    import random 
+
+    def decide_use_nickname(req: FollowupReq, t: str) -> bool:
+        nick = (req.nickname or "").strip()
+        if not nick:
+            return False
+
+        # "첫 답변" 판정: 프론트에서 turnIndex를 보내는 게 베스트지만,
+        # 지금은 requestId 기준으로 간이 처리 가능(아래 B안에서 더 안정적으로 개선)
+        # 일단 안전하게: "처음이거나", "번호 지정/제일 추천"이면 확정 사용
+        is_number_pick = any(x in t for x in ["1", "2", "3", "4", "5", "6", "7", "8", "번"])
+        is_recommend_one = ("제일" in t) or ("하나만" in t) or ("베스트" in t)
+
+        # 첫 답변을 100%로 만들려면 'firstTurn' 신호가 필요함.
+        # 임시로: 도움말/인사/번호/추천요청은 닉네임 사용 쪽으로
+        is_first_like = _is_greeting(t) or _is_help_query(t)
+
+        if is_number_pick or is_recommend_one or is_first_like:
+            return True
+
+        # 이후는 40% 확률
+        return random.random() < 0.40
+    
+    use_nickname = decide_use_nickname(req, t)
+
     # 3) system prompt
     system = f"""
 너는 패션 코디 추천 앱의 “후속 설명” 어시스턴트다.
 사용자는 이미 1~8번 코디 카드(사진)를 보고 있고, 너는 그 카드들의 메타데이터(items)만 제공받는다.
+
+━━━━━━━━━━━━━━━━━━━━━━
+사용자 정보
+━━━━━━━━━━━━━━━━━━━━━━
+- 닉네임: {req.nickname}
+- 선호 스타일: {req.style}
+- 카테고리: {category}
+- 성별: {gender}
+
+━━━━━━━━━━━━━━━━━━━━━━
+닉네임 호출 정책 (서버 결정)
+━━━━━━━━━━━━━━━━━━━━━━
+- use_nickname = {use_nickname}
+- 닉네임 = "{req.nickname}"
+
+규칙:
+- use_nickname이 True이고 닉네임이 비어있지 않으면: 답변 첫 문장에 딱 1회 "{req.nickname}님," 으로 시작한다.
+- use_nickname이 False이면: 닉네임/호칭을 절대 쓰지 않는다.
+
+━━━━━━━━━━━━━━━━━━━━━━
+표현 변주 규칙 (강제)
+━━━━━━━━━━━━━━━━━━━━━━
+- 같은 번호(MODE B) 질문이 반복되면, 매번 문장 구조와 어휘를 바꿔서 답한다.
+  단, 본질(코디 포인트)은 일관되게 유지한다.
+- 답변은 아래 4가지 관점 중 “매번 2개만” 골라 조합한다. (랜덤처럼 보이게)
+  1) 무드/인상(단정/차분/가벼움/무게감)
+  2) 실루엣/비율(상·하체 균형, 길이감, 시선 흐름)
+  3) 활용/TPO(어디에 적합한지 1개만)
+  4) 디테일 포인트(소재감/톤온톤/대비/레이어링 중 1개)
+- 동일 표현 반복 금지:
+  예: “단정하고 고급스럽다”, “격식 있다” 같은 문구를 연속 답변에서 그대로 반복하지 않는다.
+
+━━━━━━━━━━━━━━━━━━━━━━
+핵심 동작 규칙
+━━━━━━━━━━━━━━━━━━━━━━
+1. 닉네임 규칙 (강제)
+- 닉네임이 비어있지 않다면, MODE B(번호 지정 설명) / MODE D(제일 추천) / 첫 답변 중 해당되는 경우
+  답변의 "첫 문장"에 반드시 정확히 1회 닉네임을 포함한다.
+  예: "태희님, ..."
+- 닉네임이 비어있다면 호칭을 쓰지 않는다.
+- 같은 답변에서 닉네임을 2번 이상 쓰지 않는다.
+
+2. 사용자의 선호 스타일({req.style})에 맞춰 설명 톤을 조절한다.
+   - minimal:
+     담백하고 정제된 표현.
+     실루엣, 컬러 밸런스, 절제된 무드 강조.
+     과한 감정 표현 금지.
+
+   - casual:
+     편안함, 데일리 활용도, 부담 없음 강조.
+     말투는 부드럽고 자연스럽게.
+
+   - street:
+     분위기, 존재감, 실루엣 대비, 스트릿 감성 강조.
+     약간 더 생동감 있는 표현 허용.
+
+   - classic:
+     단정함, 균형감, 안정적인 조합, 격식 강조.
+     차분하고 정돈된 설명 유지.
 
 ━━━━━━━━━━━━━━━━━━━━━━
 핵심 제약 (반드시 지켜)
@@ -1508,6 +1759,27 @@ async def chat_followup(req: FollowupReq):
   “공감합니다” 같은 상담봇 문장 금지.
 
 ━━━━━━━━━━━━━━━━━━━━━━
+애매한 입력 처리 규칙 (중요)
+━━━━━━━━━━━━━━━━━━━━━━
+사용자 입력이 짧거나 애매할 때(예: "ㅇㅇ", "흠", "별로", "그냥", "애매", "몰라", "?")는
+아래 중 하나로 ‘대화가 끊기지 않게’ 처리한다.
+
+"몇 번이 좋아?/몇번입을까/어느게 나아" 같은 선택 질문이면
+→ 1) 지금 후보 중 추천 1개를 먼저 고르고
+→ 2) 왜인지 2포인트만 말하고
+→ 3) 마지막에 확인 질문 1개(단정 vs 편한 쪽?)
+
+- 사용자가 번호를 암시하면(MODE B): 해당 번호만 짧게 설명한다.
+- "별로/애매/싫어" 류면(MODE E):
+  1) 싫을 수 있는 포인트를 1문장으로 추정(단정 금지)
+  2) 선택지를 2개로 제시(예: 더 클래식 vs 더 캐주얼)
+  3) 마지막에 질문은 딱 1개만: "어떤 쪽이 더 좋아?"
+
+- 아무 정보가 없으면:
+  "원하는 방향을 2개 옵션으로 제시" 후 질문 1개.
+  (예: "더 단정하게" vs "더 편하게")
+
+━━━━━━━━━━━━━━━━━━━━━━
 추가 규칙
 ━━━━━━━━━━━━━━━━━━━━━━
 - 브랜드/가격: 메타만으로 정확히 모른다고 인정하고 아이템 유형 수준으로만 부드럽게.
@@ -1523,7 +1795,11 @@ async def chat_followup(req: FollowupReq):
 {items_ctx}
 """.strip()
 
-    msgs = [{"role": "user", "content": t}]
+    msgs = []
+    if (req.prevAnswer or "").strip():
+        msgs.append({"role": "assistant", "content": req.prevAnswer.strip()})
+    msgs.append({"role": "user", "content": t})
+
     reply = await call_openai_responses(msgs, system=system)
     return FollowupResp(answer=reply, requestId=req.requestId)
 
