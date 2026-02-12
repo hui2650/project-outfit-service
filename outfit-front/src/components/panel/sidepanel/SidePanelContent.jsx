@@ -4,32 +4,33 @@ import GenderChoice from '../GenderChoice'
 import CategoryChoice from '../CategoryChoice'
 import TextQueryBox from '../TextQueryBox'
 import SubmitButton from '../SubmitButton'
+import { useChatPage } from '../../../pages/chat/ChatPageContext.jsx' // 경로 맞춰
 
-const SidePanelContent = ({
-  previewUrl,
-  inputRef,
-  textQuery,
-  onTextQuery,
-  onFile,
-  onSubmit,
-  loading,
-  onChangeCategory,
-  category,
-  gender,
-  onChangeGender,
-  file,
-}) => {
+const SidePanelContent = ({ loading }) => {
+  const {
+    previewUrl,
+    inputRef,
+    textQuery,
+    setTextQuery,
+    handleFile,
+    handleSubmit,
+    setCategory,
+    category,
+    gender,
+    setGender,
+    file,
+  } = useChatPage()
+
   const pickFile = () => inputRef.current?.click()
 
   return (
-    <div className="bg-card/90 p-8 flex-1 overflow-y-auto">
+    <div className="h-full bg-card/90 p-8 flex-1 overflow-y-auto">
       <UploadDropzone
         previewUrl={previewUrl}
-        onFile={onFile}
+        onFile={handleFile}
         inputRef={inputRef}
       />
 
-      {/* 버튼은 그냥 실행만 */}
       <button
         className="mt-4 w-full rounded-xl 
         bg-gradient-to-r from-primary/90 to-accent/90
@@ -44,15 +45,16 @@ const SidePanelContent = ({
       >
         이미지 선택
       </button>
-      <GenderChoice gender={gender} onChangeGender={onChangeGender} />
+
+      <GenderChoice gender={gender} onChangeGender={setGender} />
       <hr />
-      <CategoryChoice category={category} onChangeCategory={onChangeCategory} />
-      <TextQueryBox textQuery={textQuery} onTextQuery={onTextQuery} />
+      <CategoryChoice category={category} onChangeCategory={setCategory} />
+      <TextQueryBox textQuery={textQuery} onTextQuery={setTextQuery} />
 
       <SubmitButton
         loading={loading}
-        onSubmit={onSubmit}
-        isReadyToSubmit={!!file && !!category && !!gender} //!!file: 파일이 존재하면 true, 선택된 카테고리가 있다면 true 둘 다 있어야 버튼이 활성화됨
+        onSubmit={handleSubmit}
+        isReadyToSubmit={!!file && !!category && !!gender}
       />
     </div>
   )

@@ -1,26 +1,26 @@
-import React from 'react'
-import ResultCard from './ResultCard'
-import { useLayout } from '../../store/layoutStore'
+import React from "react";
+import ResultCard from "./ResultCard";
+import { useLayout } from "../../store/layoutStore";
 
 // Swiper
-import { Swiper, SwiperSlide } from 'swiper/react'
-import { Scrollbar, Navigation, A11y } from 'swiper/modules'
-import 'swiper/css'
-import 'swiper/css/scrollbar'
-import 'swiper/css/navigation' // 네비게이션 CSS 추가
-import ResultModal from '../common/ResultModal'
+import { Swiper, SwiperSlide } from "swiper/react";
+import { Scrollbar, Navigation, A11y } from "swiper/modules";
+import "swiper/css";
+import "swiper/css/scrollbar";
+import "swiper/css/navigation"; // 네비게이션 CSS 추가
+import ResultModal from "../common/ResultModal";
 
 const ResultCarousel = ({ items = [] }) => {
-  const [selectedIndex, setSelectedIndex] = React.useState(null)
-  const swiperRef = React.useRef(null)
-  const { panelCollapsed } = useLayout()
+  const [selectedIndex, setSelectedIndex] = React.useState(null);
+  const swiperRef = React.useRef(null);
+  const { panelCollapsed } = useLayout();
 
   // items가 바뀌면 첫 슬라이드로 이동
   React.useEffect(() => {
     if (swiperRef.current) {
-      swiperRef.current.slideTo(0, 0)
+      swiperRef.current.slideTo(0, 0);
     }
-  }, [items])
+  }, [items]);
 
   return (
     <div className="w-full p-4 relative mb-8 group">
@@ -39,12 +39,12 @@ const ResultCarousel = ({ items = [] }) => {
         }}
         scrollbar={{
           draggable: true,
-          el: '.custom-scrollbar',
-          dragClass: 'custom-scrollbar-drag',
+          el: ".custom-scrollbar",
+          dragClass: "custom-scrollbar-drag",
         }}
         navigation={{
-          nextEl: '.swiper-button-next-custom',
-          prevEl: '.swiper-button-prev-custom',
+          nextEl: ".swiper-button-next-custom",
+          prevEl: ".swiper-button-prev-custom",
         }}
         className="pb-12" // 하단 스크롤바 공간 확보
       >
@@ -55,16 +55,8 @@ const ResultCarousel = ({ items = [] }) => {
         ))}
       </Swiper>
 
-      {/* 커스텀 네비게이션 버튼 */}
-      <button className="swiper-button-prev-custom absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white border rounded-full p-2 shadow-md disabled:opacity-30">
-        ‹
-      </button>
-      <button className="swiper-button-next-custom absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white border rounded-full p-2 shadow-md disabled:opacity-30">
-        ›
-      </button>
-
       {/* 커스텀 스크롤바 (슬라이더 하단) */}
-      <div className="custom-scrollbar mt-4 mx-auto w-3/4" />
+      <div className="custom-scrollbar mt-4 mx-auto w-full" />
 
       {/* 모달 */}
       {selectedIndex !== null && (
@@ -76,7 +68,7 @@ const ResultCarousel = ({ items = [] }) => {
         />
       )}
     </div>
-  )
-}
+  );
+};
 
-export default ResultCarousel
+export default ResultCarousel;

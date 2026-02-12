@@ -3,7 +3,7 @@ import UserButton from '../../common/UserButton'
 
 const SidePanelFooter = () => {
   return (
-    <div className="p-6 w-full flex justify-between bg-card/80 shrink-0 border-t ">
+    <div className="p-6 w-full flex justify-between bg-card/80 shrink-0 border-t">
       <div className="flex items-center gap-2">
         <UserButton to="/userpage" confirmBeforeNav={false} />
         <div>

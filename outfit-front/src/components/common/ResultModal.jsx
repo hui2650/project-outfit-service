@@ -3,10 +3,10 @@ import { useAppData } from '../../store/appDataStore.jsx'
 import LikeButton from './LikeButton.jsx'
 
 const ResultModal = ({ items, index, onClose, onChangeIndex }) => {
-  const item = items?.[index] // ✅ 먼저 잡기 (방어)
+  const item = items?.[index] //  먼저 잡기 (방어)
 
   const { isLiked, toggleLike } = useAppData()
-  const liked = item ? isLiked(item) : false // ✅ item 없으면 false
+  const liked = item ? isLiked(item) : false //  item 없으면 false
 
   // Esc로 닫기
   React.useEffect(() => {
@@ -41,7 +41,7 @@ const ResultModal = ({ items, index, onClose, onChangeIndex }) => {
     if (index < (items?.length ?? 0) - 1) onChangeIndex(index + 1)
   }
 
-  // ✅ item이 없으면 렌더 자체를 막아버리기 (안전)
+  //  item이 없으면 렌더 자체를 막아버리기 (안전)
   if (!item) return null
 
   return (

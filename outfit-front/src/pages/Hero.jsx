@@ -1,30 +1,26 @@
-import React, { useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useRef } from 'react'
+import { useTransition } from '../store/transitionStore'
+import { useNavigate } from 'react-router-dom'
 
-import Header from "../components/layout/Header";
+import Header from '../components/layout/Header'
 
-import usePagingSnap from "../hooks/usePagingSnap";
-import HeroIntroFirst from "../components/hero/HeroIntroFirst";
-import HeroIntroSecond from "../components/hero/HeroIntroSecond";
+import usePagingSnap from '../hooks/usePagingSnap'
+import HeroIntroFirst from '../components/hero/HeroIntroFirst'
+import HeroIntroSecond from '../components/hero/HeroIntroSecond'
 
 const Hero = () => {
-  const nav = useNavigate();
-  const [leaving, setLeaving] = useState(false);
+  const nav = useNavigate()
+  const { leaving, handleStart } = useTransition()
 
-  const scrollerRef = useRef(null);
+  const scrollerRef = useRef(null)
 
   usePagingSnap(scrollerRef, {
-    selector: "[data-hero-section]",
+    selector: '[data-hero-section]',
     lockMs: 900,
     wheelThreshold: 40,
     swipeThresholdPx: 60,
     durationMs: 650,
-  });
-
-  const handleStart = () => {
-    setLeaving(true);
-    setTimeout(() => nav("/chat"), 250);
-  };
+  })
 
   return (
     <div className="h-screen overflow-hidden">
@@ -32,15 +28,21 @@ const Hero = () => {
 
       <div ref={scrollerRef} className="h-full overflow-y-auto scroll-smooth">
         <div data-hero-section>
-          <HeroIntroFirst leaving={leaving} handleStart={handleStart} />
+          <HeroIntroFirst
+            leaving={leaving}
+            handleStart={() => handleStart(() => nav('/user-info-nickname'))}
+          />
         </div>
 
         <div data-hero-section>
-          <HeroIntroSecond leaving={leaving} handleStart={handleStart} />
+          <HeroIntroSecond
+            leaving={leaving}
+            handleStart={() => handleStart(() => nav('/user-info-nickname'))}
+          />
         </div>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default Hero;
+export default Hero

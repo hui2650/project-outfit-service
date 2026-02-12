@@ -1,7 +1,6 @@
 import React from 'react'
 import { useAppData } from '../store/appDataStore.jsx'
 import Header from '../components/layout/Header.jsx'
-
 import FavoritesSection from '../components/user/FavoritesSection.jsx'
 import HistorySection from '../components/user/HistorySection.jsx'
 import ResultModal from '../components/common/ResultModal.jsx'
@@ -29,7 +28,7 @@ const UserPage = () => {
     <>
       <Header />
 
-      <div className="min-h-screen p-6">
+      <div className="min-h-screen p-6 mt-14">
         <h2 className="text-2xl font-bold">내 기록</h2>
 
         <FavoritesSection
@@ -51,7 +50,7 @@ const UserPage = () => {
         />
       </div>
 
-      {/* ✅ 핵심: 열릴 때만 렌더 */}
+      {/*  핵심: 열릴 때만 렌더 */}
       {isModalOpen && (
         <ResultModal
           items={modalItems}
