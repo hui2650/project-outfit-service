@@ -12,6 +12,10 @@ const ChatPreview = ({ previewUrl, textQuery }) => {
           src={previewUrl}
           alt="sent"
           className="w-full h-36 object-contain rounded-xl bg-card"
+          onError={(e) => {
+            // blob URL이 만료/해제된 경우 콘솔 ERR_FILE_NOT_FOUND 방지: 이미지 숨김 처리
+            e.currentTarget.style.display = 'none'
+          }}
         />
       )}
 
