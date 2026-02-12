@@ -1,11 +1,30 @@
-import React from 'react'
+import React from "react";
+import { useLocation, Link } from "react-router-dom";
+import DarkModeToggle from "../common/DarkModeToggle";
 
 const Header = () => {
-  return (
-    <header className="fixed left-0 top-0  w-full h-12 flex items-center px-6">
-      <h1 className="text-xl text-foreground text-bold">Oufit Service</h1>
-    </header>
-  )
-}
+  const location = useLocation();
+  const isHeroPage = location.pathname === "/";
+  const chatPage = location.pathname === "/chat";
 
-export default Header
+  return (
+    <header
+      className={`left-0 top-0 w-full h-14 px-8 ${!chatPage ? "fixed z-50 " : ""} `}
+    >
+      <div
+        className={`w-full h-14 flex items-center justify-between ${!isHeroPage ? "border-b border-border" : ""}`}
+      >
+        <Link
+          id="logo"
+          to={location.pathname === "/" ? "/" : "/chat"}
+          className="text-xl text-foreground"
+        >
+          Outfit Service
+        </Link>
+        <DarkModeToggle />
+      </div>
+    </header>
+  );
+};
+
+export default Header;

@@ -1,0 +1,22 @@
+/* ResultCarousel 전용 Swiper Scrollbar */
+.custom-scrollbar {
+  height: 6px; /* 두께 */
+  border-radius: 9999px;
+  background: rgba(148, 163, 184, 0.25); /* 트랙 색 (slate 느낌) */
+}
+
+/* 드래그 핸들 */
+.custom-scrollbar .custom-scrollbar-drag,
+.custom-scrollbar .swiper-scrollbar-drag {
+  height: 100%;
+  border-radius: 9999px;
+  background: hsl(var(--primary));
+  opacity: 0.85;
+  position: relative;
+}
+
+/* hover 시 조금 더 진하게 */
+.custom-scrollbar:hover .custom-scrollbar-drag,
+.custom-scrollbar:hover .swiper-scrollbar-drag {
+  opacity: 1;
+}

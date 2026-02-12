@@ -1,22 +1,23 @@
+import React from 'react'
 import UserInputPreview from './UserInputPreview'
 import ResultCarousel from './ResultCarousel'
-import OutfitLoadingMark from './OutfitLoadingMark'
+import OutfitLoadingMark from '../common/OutfitLoadingMark'
 import AIMessage from './AIMessage'
 
 const Turn = ({ turn, onSelectItem }) => {
   /* ===============================
-     1️⃣ 로딩 전용 Turn
+     로딩 전용 Turn
      =============================== */
   if (turn.status === 'loading') {
     return (
-      <div className="w-full h-full min-h-[240px] flex items-center justify-center">
+      <div className="w-full h-[calc(100vh-54px)] flex-1 flex items-center justify-center">
         <OutfitLoadingMark />
       </div>
     )
   }
 
   /* ===============================
-     2️⃣ 일반 Turn (채팅 렌더)
+     일반 Turn (채팅 렌더)
      =============================== */
   return (
     <div className="w-full">
@@ -32,7 +33,7 @@ const Turn = ({ turn, onSelectItem }) => {
           )
         }
 
-        // 텍스트 메시지 (유저 / AI)
+        // 텍스트 메시지
         if (msg.type === 'text') {
           return <AIMessage key={msg.id} content={msg.content} role={msg.role} />
         }
@@ -40,21 +41,7 @@ const Turn = ({ turn, onSelectItem }) => {
         // 결과 캐러셀
         if (msg.type === 'carousel') {
           return (
-            <ResultCarousel
-              key={msg.id}
-              items={msg.items}
-              loading={false}
-              onSelectItem={(item) =>
-                onSelectItem(
-                  turn.id,
-                  msg.requestId,
-                  item,
-                  turn.input.file,
-                  turn.input.category,
-                  turn.input.gender
-                )
-              }
-            />
+            <ResultCarousel key={msg.id} items={msg.items} loading={false} />
           )
         }
 

@@ -55,7 +55,7 @@ export default {
         lg: 'var(--radius)',
       },
 
-      // ✅ keyframes 한 번만
+      // keyframes
       keyframes: {
         slotShow: {
           '0%': { opacity: '0', transform: 'scale(0.95)' },
@@ -78,7 +78,7 @@ export default {
         },
       },
 
-      // ✅ animation 한 번만
+      // animation
       animation: {
         slot1: 'slotShow 10s ease-in-out 0s infinite both',
         slot2: 'slotShow 10s ease-in-out 2s infinite both',

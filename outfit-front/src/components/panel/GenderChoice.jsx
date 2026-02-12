@@ -1,7 +1,7 @@
-import React from 'react'
+import React from "react";
 
 const GenderChoice = ({ gender, onChangeGender }) => {
-  const genders = ['man', 'woman']
+  const genders = ["man", "woman"];
 
   return (
     <div className="flex gap-2 mt-8 mb-4 flex-wrap">
@@ -11,8 +11,8 @@ const GenderChoice = ({ gender, onChangeGender }) => {
           type="button"
           className={`px-3 py-1.5 rounded-full border transition-colors duration-150 ${
             gender === g
-              ? 'bg-primary text-white'
-              : 'bg-secondary text-secondary-foreground border-gray-300 hover:bg-primary/10 hover:text-primary'
+              ? "bg-gradient-to-r from-primary/90 to-accent/90 text-white"
+              : "bg-secondary text-secondary-foreground border-gray-300 hover:bg-primary/10 hover:text-primary"
           }`}
           onClick={() => onChangeGender(g)}
         >
@@ -20,7 +20,7 @@ const GenderChoice = ({ gender, onChangeGender }) => {
         </button>
       ))}
     </div>
-  )
-}
+  );
+};
 
-export default GenderChoice
+export default GenderChoice;

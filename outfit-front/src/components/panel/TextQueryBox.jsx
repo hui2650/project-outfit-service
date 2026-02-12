@@ -1,4 +1,4 @@
-import React from 'react'
+import React from "react";
 
 const TextQueryBox = ({ textQuery, onTextQuery }) => {
   return (
@@ -14,7 +14,7 @@ const TextQueryBox = ({ textQuery, onTextQuery }) => {
         onChange={(e) => onTextQuery(e.target.value)}
       />
     </div>
-  )
-}
+  );
+};
 
-export default TextQueryBox
+export default TextQueryBox;

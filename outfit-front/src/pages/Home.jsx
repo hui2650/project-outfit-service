@@ -1,84 +1,41 @@
-import React, { useState } from 'react'
+import React from "react";
+import AppShell from "../components/layout/AppShell";
+import ResultStage from "../components/stage/ResultStage";
+import SidePanel from "../components/panel/sidepanel/SidePanel.jsx";
+import SessionPanel from "../components/panel/sidepanel/SessionPanel.jsx";
 
-import Header from '../components/layout/Header'
-import AppShell from '../components/layout/AppShell'
-import ResultStage from '../components/stage/ResultStage'
-import SidePanel from '../components/panel/sidepanel/SidePanel'
+import { ChatPageProvider, useChatPage } from "./chat/ChatPageContext.jsx";
 
-import { useFileInput } from '../hooks/useFileInput'
-import { useChatLogs } from '../hooks/useChatLogs'
-import { useRecommend } from '../hooks/useRecommend'
-import { createTurn } from '../utils/createTurn'
-import { useInputOptions } from '../hooks/useInputOptions'
-
-const Home = () => {
-  const { file, previewUrl, handleFile, setFile } = useFileInput()
-  const { chatLogs, appendTurn, updateTurn } = useChatLogs()
-  const { requestRecommend } = useRecommend({ updateTurn })
-
-  const [error, setError] = useState(null)
-
+const HomeInner = () => {
   const {
-    textQuery,
-    setTextQuery,
-    category,
-    setCategory,
-    gender,
-    setGender,
-    reset,
-  } = useInputOptions()
-
-  const handleSubmit = async () => {
-    if (!file) {
-      setError({ code: 'NO_FILE', message: '이미지를 업로드해주세요' })
-      return
-    }
-
-    const newTurn = createTurn({
-      file,
-      previewUrl,
-      textQuery,
-      category,
-      gender,
-    })
-
-    appendTurn(newTurn)
-
-    await requestRecommend({
-      turnId: newTurn.id,
-      file,
-      textQuery,
-      category,
-      gender,
-    })
-
-    setFile(null)
-    reset()
-  }
+    chatLogs,
+    chatDisabled,
+    handleSendChat,
+    handleNewChat,
+    rightPanelMode,
+  } = useChatPage();
 
   return (
-    <>
-      <Header />
-      <AppShell
-        left={<ResultStage chatLogs={chatLogs} />}
-        right={
-          <SidePanel
-            file={file}
-            error={error}
-            previewUrl={previewUrl}
-            onTextQuery={setTextQuery}
-            textQuery={textQuery}
-            onChangeCategory={setCategory}
-            category={category}
-            onChangeGender={setGender}
-            gender={gender}
-            onFile={handleFile}
-            onSubmit={handleSubmit}
-          />
-        }
-      />
-    </>
-  )
-}
+    <AppShell
+      left={
+        <ResultStage
+          chatLogs={chatLogs}
+          onSendChat={handleSendChat}
+          chatDisabled={chatDisabled}
+          onNewChat={handleNewChat}
+        />
+      }
+      right={rightPanelMode === "input" ? <SidePanel /> : <SessionPanel />}
+    />
+  );
+};
 
-export default Home
+const Home = () => {
+  return (
+    <ChatPageProvider>
+      <HomeInner />
+    </ChatPageProvider>
+  );
+};
+
+export default Home;

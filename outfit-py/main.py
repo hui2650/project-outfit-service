@@ -51,7 +51,7 @@ DEFAULT_HEADERS = {
     "Accept": "*/*",
 }
 
-CANDIDATE_TIMEOUT_SEC = float(os.getenv("CANDIDATE_TIMEOUT_SEC", "24.0"))
+CANDIDATE_TIMEOUT_SEC = float(os.getenv("CANDIDATE_TIMEOUT_SEC", "9.0"))
 MAX_CONCURRENCY = int(os.getenv("MAX_CONCURRENCY", "10"))
 RAW_POOL_LIMIT = int(os.getenv("RAW_POOL_LIMIT", "260"))
 MAX_DOWNLOAD_IMAGES = int(os.getenv("MAX_DOWNLOAD_IMAGES", "180"))
@@ -302,7 +302,6 @@ COLOR_RGB = {
     "gray": np.array([140, 140, 140], dtype=np.float32),
     "green": np.array([60, 140, 80], dtype=np.float32),
     "red": np.array([180, 60, 60], dtype=np.float32),
-    "burgundy": np.array([115, 38, 45], dtype=np.float32),
 }
 
 def normalize_color(color_raw: str) -> Optional[str]:
@@ -317,32 +316,6 @@ def normalize_color(color_raw: str) -> Optional[str]:
             return COLOR_ALIASES[tok]
     return None
 
-def detect_color_from_text(text: str) -> Optional[str]:
-    """Lightweight keyword-based color detection from textQuery/title.
-    Used only when userColor is empty to avoid wrong inference overriding explicit choice.
-    """
-    t = (text or "").lower()
-    if not t:
-        return None
-    # Order matters: more specific first
-    rules = [
-        ("red", ["버건디", "와인", "bordeaux", "burgundy", "wine", "레드", "빨강", "red"]),
-        ("black", ["블랙", "검정", "검은", "black"]),
-        ("white", ["화이트", "흰", "흰색", "white"]),
-        ("gray", ["그레이", "회색", "차콜", "charcoal", "grey", "gray"]),
-        ("beige", ["베이지", "아이보리", "크림", "ivory", "cream", "beige"]),
-        ("brown", ["브라운", "갈색", "초코", "brown", "choco"]),
-        ("navy", ["네이비", "곤색", "navy"]),
-        ("blue", ["블루", "파랑", "청색", "blue"]),
-        ("green", ["그린", "초록", "녹색", "green"]),
-    ]
-    for col, kws in rules:
-        for kw in kws:
-            if kw.lower() in t:
-                return col
-    return None
-
-
 def dominant_rgb(img: Image.Image) -> np.ndarray:
     arr = np.asarray(img.resize((96, 96), Image.BILINEAR), dtype=np.float32)
     flat = arr.reshape(-1, 3)
@@ -356,18 +329,6 @@ def dominant_rgb(img: Image.Image) -> np.ndarray:
 
 def infer_color_from_item_img(item_img: Image.Image) -> Tuple[Optional[str], Dict[str, Any]]:
     rgb = dominant_rgb(center_square_crop(item_img, 0.85))
-    # Heuristic: detect near-neutral (black/gray) first to avoid drifting into 'brown'.
-    mean = float(np.mean(rgb))
-    chroma = float(np.max(rgb) - np.min(rgb))
-    if mean < 70.0 and chroma < 28.0:
-        return "black", {"infer": "ok", "dominantRGB": [float(x) for x in rgb], "best": "black", "bestDist": 0.0, "rule": "near_black"}
-    if 70.0 <= mean <= 175.0 and chroma < 24.0:
-        return "gray", {"infer": "ok", "dominantRGB": [float(x) for x in rgb], "best": "gray", "bestDist": 0.0, "rule": "near_gray"}
-    # Heuristic: dark/wine reds often get pulled toward 'brown' by RGB prototypes.
-    # If red channel clearly dominates, keep it in the red-family.
-    if float(rgb[0]) > float(rgb[1]) + 20 and float(rgb[0]) > float(rgb[2]) + 12:
-        if float(rgb[1]) < 90 and float(rgb[2]) < 95:
-            return "red", {"infer": "ok", "dominantRGB": [float(x) for x in rgb], "best": "red", "bestDist": 0.0, "rule": "red_dominant"}
     best = None
     best_dist = 1e9
     for name, proto in COLOR_RGB.items():
@@ -406,10 +367,6 @@ def color_compatible(user_color: str, cand_color: str) -> bool:
         return c in {"brown", "beige", "black", "navy"}
     if u == "navy":
         return c in {"navy", "black", "gray", "white"}
-    if u == "red":
-        return c in {"red", "burgundy"}
-    if u == "burgundy":
-        return c in {"burgundy", "red"}
     return False
 
 def color_penalty(user_color: Optional[str], region: Image.Image) -> Tuple[float, Dict[str, Any]]:
@@ -446,26 +403,6 @@ def detect_person_boxes(img: Image.Image, conf: float = 0.25) -> List[Tuple[floa
         out.append((x1n, y1n, x2n, y2n, float(cf)))
     out.sort(key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), reverse=True)
     return out
-
-
-def is_valid_person_box(
-    box: Tuple[float, float, float, float, float],
-    *,
-    category: str,
-) -> bool:
-    """Heuristic to reduce YOLO false-positives on product photos.
-
-    - For outfit categories (outerwear/top/bottom/dress/skirt/bag), require a reasonably tall/large box.
-    - For footwear, allow smaller height (because feet-only shots may exist).
-    """
-    x1n, y1n, x2n, y2n, _ = box
-    w = max(0.0, float(x2n - x1n))
-    h = max(0.0, float(y2n - y1n))
-    area = w * h
-    if category == "footwear":
-        return (area >= 0.045) and (h >= 0.22)
-    # Default strictness
-    return (area >= 0.08) and (h >= 0.35)
 
 def crop_by_norm(img: Image.Image, x1n: float, y1n: float, x2n: float, y2n: float) -> Image.Image:
     w, h = img.size
@@ -525,17 +462,12 @@ def build_search_query(
     category_mapped: str,
     gender_mapped: str,
     normalized_color: Optional[str],
-    coat_length: Optional[str] = None,
 ) -> str:
     parts: List[str] = []
     if text_query:
         parts.append(text_query.strip())
     else:
         parts.append(CATEGORY_KW.get(category_mapped, ""))
-
-    # Outerwear length hint (balanced: helps retrieve correct long/short coats)
-    if category_mapped == "outerwear" and coat_length in {"long", "short"}:
-        parts.append("롱코트" if coat_length == "long" else "숏코트")
 
     if normalized_color:
         parts.append(KOREAN_COLOR_KEYWORDS.get(normalized_color, ""))
@@ -547,18 +479,14 @@ def build_search_query(
         parts.append("여자 여성 여자코디 여친룩 여성룩")
 
     parts.append(CATEGORY_KW.get(category_mapped, ""))
-    parts.append("착화샷 발샷 신발코디 코디 룩북 스트릿 스냅 데일리룩 무신사 스냅 코디북 OOTD") if category_mapped == "footwear" else parts.append("전신 착샷 코디 룩북 스트릿 스냅 데일리룩 무신사 스냅 코디북 OOTD 착용샷")
+    parts.append("전신 착샷 코디 룩북 스트릿 스냅 데일리룩 무신사 스냅 코디북 OOTD 착용샷")
     return " ".join(dict.fromkeys(" ".join(parts).split()))
 
 ITEM_TAXONOMY: List[Dict[str, Any]] = [
-    # ---- Footwear (more granular; helps sandals/slides not become loafers) ----
-    {"en": "sandals", "kr": ["샌들", "샌달"], "part": "feet"},
-    {"en": "slides", "kr": ["슬리퍼", "슬라이드", "슬라이더"], "part": "feet"},
-    {"en": "flip flops", "kr": ["쪼리", "플립플랍", "조리"], "part": "feet"},
     {"en": "sneakers", "kr": ["운동화", "스니커즈"], "part": "feet"},
-    {"en": "boots", "kr": ["부츠", "워커", "첼시부츠"], "part": "feet"},
-    {"en": "loafers", "kr": ["로퍼", "페니로퍼"], "part": "feet"},
-    {"en": "dress shoes", "kr": ["구두", "더비", "옥스포드"], "part": "feet"},
+    {"en": "boots", "kr": ["부츠"], "part": "feet"},
+    {"en": "loafers", "kr": ["로퍼"], "part": "feet"},
+    {"en": "dress shoes", "kr": ["구두", "드레스슈즈"], "part": "feet"},
 
     {"en": "t-shirt", "kr": ["티셔츠", "반팔"], "part": "upper"},
     {"en": "shirt", "kr": ["셔츠"], "part": "upper"},
@@ -638,46 +566,6 @@ def taxonomy_best(user_crop: Image.Image) -> Tuple[Dict[str, Any], float]:
     best_prob = float(probs[idx])
     return best_item, best_prob
 
-
-
-# =========================
-# OUTERWEAR LENGTH (롱/숏) — query refinement + light penalty
-# =========================
-def detect_coat_length_hint(text_query: str) -> Optional[str]:
-    q = (text_query or "").lower()
-    # Korean
-    if any(k in q for k in ["롱코트", "롱 코트", "롱트렌치", "롱 트렌치", "롱자켓", "롱 자켓", "맥코트", "맥 코트"]):
-        return "long"
-    if any(k in q for k in ["숏코트", "숏 코트", "숏자켓", "숏 자켓", "크롭자켓", "크롭 자켓", "숏패딩", "숏 패딩"]):
-        return "short"
-    # English
-    if any(k in q for k in ["long coat", "long trench", "long overcoat", "full length coat"]):
-        return "long"
-    if any(k in q for k in ["short coat", "cropped jacket", "crop jacket", "short trench"]):
-        return "short"
-    return None
-
-@torch.inference_mode()
-def infer_coat_length_from_image(user_person_or_item: Image.Image) -> Optional[str]:
-    # Very light heuristic: only used when user didn't specify.
-    prompts = [
-        "a person wearing a long coat",
-        "a person wearing a short coat",
-    ]
-    p = clip_scores_fast(user_person_or_item, prompts)
-    # small margin to avoid over-committing
-    if p[0] > p[1] + 0.06:
-        return "long"
-    if p[1] > p[0] + 0.06:
-        return "short"
-    return None
-
-def coat_length_token_kr(coat_length: Optional[str]) -> str:
-    if coat_length == "long":
-        return "롱코트"
-    if coat_length == "short":
-        return "숏코트"
-    return ""
 
 # =========================
 # PROMPTS / SOFT GATES
@@ -882,7 +770,6 @@ async def score_candidates(
     category: str,
     gender: str,
     normalized_color: Optional[str],
-    coat_length: Optional[str],
     user_item_embed: np.ndarray,
     user_q: str,
     item_en: str,
@@ -900,49 +787,11 @@ async def score_candidates(
 
     async def process_one(it: Dict[str, Any]) -> Optional[ScoredCand]:
         try:
-            # Footwear candidates often require extra redirects/CDNs and we run multiple CLIP checks.
-            # Give them a slightly larger per-candidate budget to reduce false "candidate_timeout" drops.
-            cand_timeout = CANDIDATE_TIMEOUT_SEC
-            if category in {"footwear", "outerwear"}:
-                cand_timeout = max(CANDIDATE_TIMEOUT_SEC, 28.0)
-            async with asyncio.timeout(cand_timeout):
+            async with asyncio.timeout(CANDIDATE_TIMEOUT_SEC):
                 url = it.get("link") or ""
                 if not url:
                     await bump("no_url")
                     return None
-
-                # Hard-block obvious shop/catalog images for bag recommendations.
-                # These domains frequently return product-only images and hurt accuracy.
-                ulc = url.lower()
-                shop_soft = False
-                if category == "bag":
-                    # product-first hosts / paths (very high false-positive rate)
-                    if (
-                        ("shop1.phinf" in ulc)
-                        or ("shop-phinf" in ulc)
-                        or ("/shopping" in ulc)
-                        or ("smartstore" in ulc)
-                        or ("storefarm" in ulc)
-                        or ("msscdn.net/images/goods_img" in ulc)
-                        or ("/images/goods_img/" in ulc)
-                        or ("/thumbnails/images/goods_img/" in ulc)
-                        or ("/data/estimate/" in ulc)
-                        or ("zigzag.kr" in ulc)
-                        or ("product-image" in ulc)
-                        or ("/web/product/" in ulc)
-                    ):
-                        await bump("shop_url_hard")
-                        return None
-
-                # For outfit categories, also hard-block clear product catalog endpoints (no 착용샷).
-                if category in {"outerwear", "top", "bottom", "dress", "skirt", "footwear"}:
-                    if ("shop1.phinf" in ulc) or ("shop-phinf" in ulc) or ("/shopping" in ulc) or ("smartstore" in ulc) or ("storefarm" in ulc):
-                        await bump("shop_url_hard")
-                        shop_soft = True
-                    # Musinsa store / catalog images (goods_img / estimate) often break "착용샷" requirement.
-                    if ("msscdn.net/images/goods_img" in ulc) or ("/images/goods_img/" in ulc) or ("/data/estimate/" in ulc) or ("goods_img" in ulc and "usersnap" not in ulc):
-                        await bump("catalog_url_hard")
-                        return None
 
                 async with sem:
                     b = await _fetch_image_bytes(url, client)
@@ -964,8 +813,6 @@ async def score_candidates(
 
                 # person crop or fallback center crop
                 persons = detect_person_boxes(img)
-                # Reduce false-positive "person" detections on catalog/product images.
-                persons = [b for b in persons if is_valid_person_box(b, category=category)]
                 used_person = False
                 if persons:
                     x1n, y1n, x2n, y2n, pconf = persons[0]
@@ -978,18 +825,7 @@ async def score_candidates(
                 penalty = 0.0
                 reasons: Dict[str, Any] = {}
 
-                # Soft penalty: shopping/cdn URLs tend to be product-heavy, but may still include model 착용샷.
-                # We keep them (to avoid zero results) but downweight.
-                if shop_soft:
-                    penalty += 0.12
-                    reasons["shop_url_soft"] = 0.12
-
                 if not used_person:
-                    # For outfit recommendation, some categories should never accept non-person/product images.
-                    # Footwear is a special case: many valid "착화샷" include only lower-body/feet.
-                    if category in {"bag", "outerwear", "top", "bottom", "dress", "skirt"}:
-                        await bump("no_person_hard")
-                        return None
                     penalty += P_NO_PERSON
                     reasons["no_person"] = float(P_NO_PERSON)
                     reasons["person_fallback"] = "center_crop"
@@ -998,10 +834,6 @@ async def score_candidates(
                 pos_outfit = float(np.max(clip_score_image_text(img, OUTFIT_POS_PROMPTS)))
                 neg_prod = float(np.max(clip_score_image_text(img, NEG_PRODUCT_PROMPTS_COMMON)))
                 outfit_ok = (pos_outfit > (neg_prod - 0.02))  # lenient
-                # For some categories, be strict: if the image looks like product/catalog, drop it.
-                if category in {"bag", "outerwear", "top", "bottom", "dress", "skirt"} and (neg_prod >= pos_outfit + 0.02):
-                    await bump("product_hard")
-                    return None
                 if not outfit_ok:
                     penalty += P_OUTFIT_PRODUCT_FAIL
                     reasons["outfit_product_fail"] = float(P_OUTFIT_PRODUCT_FAIL)
@@ -1039,41 +871,11 @@ async def score_candidates(
                     best_bad = 0.0
                     best_margin = 0.0
 
-                # Item presence: footwear tends to be smaller in-frame and noisier.
-                # Keep the same scoring pipeline, but use a slightly looser acceptance
-                # and rely on penalties + similarity ranking.
-                if category == "footwear":
-                    item_ok = (best_t >= 0.085) and (best_margin >= -0.02)
-                else:
-                    item_ok = (best_t >= 0.12) and (best_margin >= 0.00)
-
+                item_ok = (best_t >= 0.12) and (best_margin >= 0.00)
                 if not item_ok:
-                    # For non-footwear, wrong-item images are very harmful (we'd rather return fewer).
-                    if category != "footwear" and best_t < 0.090:
-                        await bump("item_presence_hard")
-                        return None
                     penalty += P_ITEM_PRESENCE_FAIL
                     reasons["item_presence_fail"] = float(P_ITEM_PRESENCE_FAIL)
                     reasons["item_presence"] = {"t": round(best_t, 4), "bad": round(best_bad, 4), "m": round(best_margin, 4)}
-                # outerwear length (롱/숏) soft check
-                if category == "outerwear" and coat_length in {"long", "short"}:
-                    lp = clip_scores_fast(person_crop, [
-                        "a person wearing a long coat",
-                        "a person wearing a short coat",
-                    ])
-                    long_p, short_p = float(lp[0]), float(lp[1])
-                    lconf = abs(long_p - short_p)
-                    if lconf >= 0.08:
-                        if coat_length == "long" and short_p > long_p:
-                            penalty += 0.12
-                            reasons["coat_length_mismatch"] = 0.12
-                            reasons["coat_length_scores"] = {"long": round(long_p,4), "short": round(short_p,4), "conf": round(lconf,4)}
-                        elif coat_length == "short" and long_p > short_p:
-                            penalty += 0.12
-                            reasons["coat_length_mismatch"] = 0.12
-                            reasons["coat_length_scores"] = {"long": round(long_p,4), "short": round(short_p,4), "conf": round(lconf,4)}
-                    else:
-                        reasons["coat_length_scores"] = {"long": round(long_p,4), "short": round(short_p,4), "conf": round(lconf,4)}
 
                 # color mismatch penalty
                 cpen, cdbg = color_penalty(normalized_color, best_crop)
@@ -1087,33 +889,23 @@ async def score_candidates(
                 sim_region = cos_sim(user_item_embed, cand_region_embed)
 
                 if sim_region < SIM_MIN_SOFT:
-                    penalty += (P_SIM_LOW * (0.6 if category == "outerwear" else 1.0))
-                    reasons["sim_low"] = float(P_SIM_LOW * (0.6 if category == "outerwear" else 1.0))
+                    penalty += P_SIM_LOW
+                    reasons["sim_low"] = float(P_SIM_LOW)
                     reasons["sim_region"] = round(float(sim_region), 4)
 
-                # gender penalty: skip for footwear (too many "feet only" shots + speeds up scoring)
-                if category == "footwear":
-                    male_s, female_s, gender_conf = 0.0, 0.0, 0.0
-                    reasons["gender_scores"] = {"male": 0.0, "female": 0.0, "conf": 0.0}
-                else:
-                    male_s = float(np.max(clip_score_image_text(img, GENDER_MALE_PROMPTS)))
-                    female_s = float(np.max(clip_score_image_text(img, GENDER_FEMALE_PROMPTS)))
-                    gender_conf = abs(male_s - female_s)
-                    if gender in ("male", "female") and (gender_conf < 0.03):
+                # gender uncertain penalty (soft)
+                male_s = float(np.max(clip_score_image_text(img, GENDER_MALE_PROMPTS)))
+                female_s = float(np.max(clip_score_image_text(img, GENDER_FEMALE_PROMPTS)))
+                gender_conf = abs(male_s - female_s)
+                if gender in ("male", "female"):
+                    if gender_conf < 0.03:
                         penalty += P_GENDER_UNCERTAIN
                         reasons["gender_uncertain"] = float(P_GENDER_UNCERTAIN)
-                    reasons["gender_scores"] = {"male": round(male_s, 4), "female": round(female_s, 4), "conf": round(float(gender_conf), 4)}
-                    # Stronger gender preference when user explicitly selected gender.
-                    if gender == "female" and (male_s > female_s + 0.06):
-                        penalty += 0.18
-                        reasons["gender_mismatch"] = 0.18
-                    elif gender == "male" and (female_s > male_s + 0.06):
-                        penalty += 0.18
-                        reasons["gender_mismatch"] = 0.18
+                reasons["gender_scores"] = {"male": round(male_s, 4), "female": round(female_s, 4), "conf": round(float(gender_conf), 4)}
 
-                # style bonus (text query) - skip for footwear to reduce compute
+                # style bonus (text query)
                 style_score = 0.0
-                if user_q and category != "footwear":
+                if user_q:
                     style_prompts = [
                         f"a full body {user_q} outfit photo",
                         f"a {user_q} street fashion lookbook",
@@ -1231,9 +1023,6 @@ async def recommend_image(
     user_item_embed = clip_image_embed(user_item_crop)
 
     normalized_color = normalize_color(userColor)
-    # If user did not specify a color explicitly, honor strong color keywords in the query/title.
-    if not normalized_color:
-        normalized_color = detect_color_from_text(textQuery)
     color_infer_dbg: Dict[str, Any] = {}
     if not normalized_color:
         inferred, dbg = infer_color_from_item_img(user_item_crop)
@@ -1246,35 +1035,15 @@ async def recommend_image(
     else:
         warnings.append(f"Color normalized: {userColor} -> {normalized_color}")
 
-    # Outerwear length hint: 숏코트/롱코트 (balance accuracy vs results)
-    coat_length = None
-    if category_mapped == "outerwear":
-        coat_length = detect_coat_length_hint(textQuery)
-        if not coat_length:
-            # if user uploaded a person-wearing image, use that; else use item crop
-            coat_length = infer_coat_length_from_image(user_base_for_clip)
-
-    search_query = build_search_query(textQuery, category_mapped, gender_mapped, normalized_color, coat_length)
+    search_query = build_search_query(textQuery, category_mapped, gender_mapped, normalized_color)
 
     item_kor = item_kr_list[0] if item_kr_list else "패션"
     color_kor = KOREAN_COLOR_KEYWORDS.get(normalized_color, "") if normalized_color else ""
-    coat_tok = coat_length_token_kr(coat_length) if category_mapped == "outerwear" else ""
-
-    if category_mapped == "footwear":
-        # Footwear needs more "착화샷/발" keywords; "전신" alone often returns product/catalog.
-        base = f"{color_kor} {item_kor} 착화샷 신발코디".strip()
-        q1 = f"{base} 전신 착샷 스트릿 스냅 무신사 스냅 OOTD {textQuery}".strip()
-        q2 = f"{base} 데일리룩 코디 전신 룩북 {textQuery}".strip()
-        q3 = f"{color_kor} {item_kor} 착샷 발끝까지 전신 코디 {textQuery}".strip()
-        q4 = f"{item_kor} 착화샷 전신 코디 무신사 스냅 {textQuery}".strip()
-    else:
-        q1 = f"{color_kor} {coat_tok} {item_kor} 전신 착샷 코디 룩북 무신사 스냅 OOTD 착용 {textQuery}".strip()
-        q2 = f"{color_kor} {coat_tok} {item_kor} 데일리룩 스트릿 스냅 전신 코디 착용 {textQuery}".strip()
-        q3 = f"{coat_tok} {item_kor} 전신 코디 착샷 룩북 무신사 스냅 착용 {textQuery}".strip()
-        q4 = f"{coat_tok} {item_kor} 코디 전신 OOTD 스트릿룩 착용 {textQuery}".strip()
-
+    q1 = f"{color_kor} {item_kor} 전신 착샷 코디 룩북 무신사 스냅 OOTD 착용 {textQuery}".strip()
+    q2 = f"{color_kor} {item_kor} 데일리룩 스트릿 스냅 전신 코디 착용 {textQuery}".strip()
+    q3 = f"{item_kor} 전신 코디 착샷 룩북 무신사 스냅 착용 {textQuery}".strip()
+    q4 = f"{item_kor} 코디 전신 OOTD 스트릿룩 착용 {textQuery}".strip()
     queries = [q1, q2, q3, q4]
-
 
     candidates = await search_multi_sources(queries)
     candidates = candidates[:MAX_DOWNLOAD_IMAGES]
@@ -1297,7 +1066,6 @@ async def recommend_image(
             category=category_mapped,
             gender=gender_mapped,
             normalized_color=normalized_color,
-            coat_length=coat_length,
             user_item_embed=user_item_embed,
             user_q=textQuery or "",
             item_en=item_en,
@@ -1342,9 +1110,7 @@ async def recommend_image(
 
     # Build passed + salvaged
     passed = [s for s in scored if s.penalty <= PASSED_PENALTY_MAX]
-    # Tier B should be "salvage" within an upper penalty bound; anything worse becomes last-resort (tier C).
-    salvaged = [s for s in scored if PASSED_PENALTY_MAX < s.penalty <= SALVAGED_PENALTY_MAX]
-    tier_c = [s for s in scored if s.penalty > SALVAGED_PENALTY_MAX]
+    salvaged = [s for s in scored if s.penalty > PASSED_PENALTY_MAX]
 
     passed.sort(key=lambda x: x.base_rank, reverse=True)
     salvaged.sort(key=lambda x: x.base_rank, reverse=True)
@@ -1359,20 +1125,6 @@ async def recommend_image(
                 break
             if s.url in used_urls:
                 continue
-            # Don't let salvage override item type for key categories.
-            pr = (s.debug or {}).get("penaltyReasons", {}) if isinstance(s.debug, dict) else {}
-            if category in {"outerwear", "bag"} and ("type_mismatch" in pr):
-                continue
-            # If user requested gender, prefer that gender when selecting (avoid male results for female queries).
-            if gender_mapped in {"male", "female"}:
-                gs = pr.get("gender_scores") or {}
-                if isinstance(gs, dict):
-                    male_s = float(gs.get("male", 0.0) or 0.0)
-                    female_s = float(gs.get("female", 0.0) or 0.0)
-                    if gender_mapped == "female" and (male_s > female_s + 0.06):
-                        continue
-                    if gender_mapped == "male" and (female_s > male_s + 0.06):
-                        continue
             selected.append(s)
             used_urls.add(s.url)
 
@@ -1383,7 +1135,7 @@ async def recommend_image(
 
     # Last resort: CLIP similarity top-N among all downloaded (tier C)
     if len(selected) < final_n:
-        remaining = [s for s in tier_c if s.url not in used_urls]
+        remaining = [s for s in scored if s.url not in used_urls]
         remaining.sort(key=lambda x: x.sim_global, reverse=True)
         for s in remaining:
             if len(selected) >= final_n:
@@ -1602,20 +1354,89 @@ async def call_openai_responses(messages: List[Dict[str, str]], system: Optional
     return "\n".join(texts).strip()
 
 
+import re
+
+# 공백 제거 + 소문자 + 특수문자 일부 제거
+def _norm(text: str) -> str:
+    t = (text or "").strip().lower()
+    t = re.sub(r"\s+", "", t)
+    return t
+
+HELP_PATTERNS = [
+    # 정체/역할
+    r"^누구냐넌$",
+    r"^넌누구야$",
+    r"^너는누구야$",
+    r"^너누구야$",
+    r"^너누구냐$",
+    r"^너뭐야$",
+    r"^너뭔데$",
+    r"^너머야$",      
+    r"^너뭐임$",
+    r"^정체뭐야$",
+    r"^정체가뭐야$",
+    r"assistant|어시스턴트|봇|챗봇|ai",
+    # 앱/사용법
+    r"이앱뭐야|이거뭐야|여기뭐야|서비스뭐야|프로그램뭐야|사이트뭐야",
+    r"어떻게써|어케써|어떻게사용|사용법|사용방법|가이드|도움말|help",
+]
+
+HELP_RE = re.compile("|".join(f"(?:{p})" for p in HELP_PATTERNS), re.I)
+HELLO_PAT = re.compile(r"^(hi|hello|hey|하이|안녕(하세요)?|여보세요|헬로)\b", re.I)
+
+def _is_greeting(text: str) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    if HELLO_PAT.search(t):
+        return True
+    if t in {"?", "??", "ㅋ", "ㅎㅎ", "ㅎ", "ㅇㅇ", "ㅇㅋ"}:
+        return True
+    # 짧은 호출/인사 느낌
+    if len(t) <= 6 and any(x in t.lower() for x in ["안녕", "여보", "hi", "hello", "hey"]):
+        return True
+    return False
+
+def _is_help_query(text: str) -> bool:
+    t = _norm(text)
+    if not t:
+        return False
+
+    # 패턴 매칭(강력)
+    if HELP_RE.search(t):
+        return True
+
+    # 약한 휴리스틱: "너" + ("누구" or "뭐" or "정체") 조합이면 help로 인정
+    if "너" in t and (("누구" in t) or ("뭐" in t) or ("정체" in t)):
+        return True
+
+    # 약한 휴리스틱: "사용/방법/어떻게/help" 중 하나라도 있으면 help로 인정
+    if any(k in t for k in ["사용", "방법", "어떻게", "어케", "help", "가이드", "도움말"]):
+        if any(k in t for k in ["앱", "서비스", "이거", "여기", "프로그램", "사이트", "너", "봇", "ai"]):
+            return True
+
+    return False
+
+
 # ---------
 # /api/v1/chat : 추천 결과(items) 기반 "코디 설명" 전용
 # ---------
 @app.post("/api/v1/chat", response_model=FollowupResp)
 async def chat_followup(req: FollowupReq):
-    # 1) 패션/코디 외 질문 차단
-    if not _is_fashion_query(req.text):
+    t = (req.text or "").strip()
+
+    # 1) 허용 범위: 패션/코디 OR 인사 OR 앱/사용법/정체성
+    allow = _is_fashion_query(t) or _is_greeting(t) or _is_help_query(t)
+    if not allow:
         return FollowupResp(
-            answer="나는 이 앱에서는 패션/코디(추천 결과 설명, 스타일 조합, 착장 해석) 관련 질문만 도와줄 수 있어. 코디/스타일 질문으로 다시 말해줘!",
+            answer="이 대화는 코디/스타일 설명과 앱 사용 안내만 도와줄 수 있어. 코디 번호(1~8)나 원하는 스타일로 물어봐줘!",
             requestId=req.requestId,
         )
 
+    category = (req.category or "").strip()
+    gender = (req.gender or "").strip()
+
     # 2) items 컨텍스트 만들기 (다운로드/이미지 열람 없이 메타만)
-    #    - 프론트는 items 배열을 그대로 보내므로 여기서 title/source/tier/score/url 정도만 사용
     items = req.items or []
     lines = []
     for i, it in enumerate(items[:8], start=1):
@@ -1624,42 +1445,88 @@ async def chat_followup(req: FollowupReq):
         tier = (it.get("tier") or "").strip()
         score = it.get("rankScore")
         url = (it.get("imageUrl") or "").strip()
-
         lines.append(f"{i}) title={title} | source={source} | tier={tier} | score={score} | url={url}")
 
     items_ctx = "\n".join(lines) if lines else "(no items)"
 
-    # 3) system: 역할/제약/출력 규칙
+    # 3) system prompt
     system = f"""
-너는 패션 코디 추천 앱의 '후속 설명' 어시스턴트야.
+너는 패션 코디 추천 앱의 “후속 설명” 어시스턴트다.
+사용자는 이미 1~8번 코디 카드(사진)를 보고 있고, 너는 그 카드들의 메타데이터(items)만 제공받는다.
 
-제약:
-- 이미지를 직접 보지 못한다. (다운로드/열람/스크린샷 상상 금지)
-- 대신 사용자가 방금 본 추천 결과의 메타데이터(items)를 제공받는다.
-- 메타(제목/소스/티어/점수) 기반으로 합리적으로 추정해서 설명한다.
-- 과장하거나 "사진에서 보이는" 같은 표현은 금지. 반드시 "메타 기준으로 보면" 톤을 써라.
+━━━━━━━━━━━━━━━━━━━━━━
+핵심 제약 (반드시 지켜)
+━━━━━━━━━━━━━━━━━━━━━━
+- 이미지를 직접 볼 수 없다. “사진에서 보인다/보이는 것 같다” 같은 표현 금지.
+- 대신 사용자가 보고 있는 코디를 ‘설명/선택 도움’ 관점에서 말한다.
+- 내부 시스템 용어(점수, penalty, tier, 랭킹 알고리즘)를 답변에 직접 언급하지 않는다.
+  → 사용자에게는 항상 “코디 포인트(무드/조합/활용도/상황)”로 번역해서 설명한다.
+- 상품명(title)을 길게 읽거나 1~8을 그대로 상품 목록처럼 나열하는 답변 금지.
+  → 필요하면 “상의/하의/아우터/신발/가방”처럼 일반화해서 말한다.
+- 사용자가 물어본 것만 답한다. 불필요한 확장 금지.
+- 답변 끝에 “더 궁금한 거?” 같은 유도 질문 금지.
 
-사용자 요청 처리:
-- 사용자가 "첫번째/1번" 등 번호를 말하면 해당 번호 후보를 중심으로 설명.
-- 번호가 없으면 1번을 기본으로 설명.
-- 답변 형식(짧게 4~8문장):
-  1) 한 줄로 무드 요약
-  2) 상의/하의/신발/아우터 중 핵심 포인트 2~3개
-  3) 어울리는 상황(데이트/출근/데일리 등) 1~2개
-  4) 사용자가 다음에 바꾸면 좋은 옵션(색/핏/아이템) 1개 제안
+━━━━━━━━━━━━━━━━━━━━━━
+대화 톤
+━━━━━━━━━━━━━━━━━━━━━━
+- 부드럽고 담백하게(Claude처럼), 과장 없이.
+- 같은 문장을 반복하지 말고 상황에 맞게 유동적으로 표현한다.
+- 답변 길이:
+  - 단일 질문: 2~4문장(또는 불릿 2~4개)로 짧게 끝낸다.
+  - 전체 요약/비교: 1~8번을 “각 1줄”로만 훑는다(길게 쓰지 않는다).
 
-추가 힌트:
-- category={req.category}
-- gender={req.gender}
+━━━━━━━━━━━━━━━━━━━━━━
+모드 판별 (가장 중요)
+━━━━━━━━━━━━━━━━━━━━━━
+
+[MODE H: 앱/사용법/정체성 도움말]
+- “너는 누구야?”, “이 앱 뭐야?”, “어떻게 사용해?”, “사용법 알려줘” 류면 앱 안내를 먼저 한다.
+- 3~6문장, 단계는 최대 3단계.
+- “나는 이미지를 직접 보는 게 아니라 메타정보 기반으로 설명한다”를 1문장으로 명확히 포함.
+
+[MODE 0: 인사/호출]
+- “안녕/여보세요/하이/hi/hello” 류면 짧게 인사하고, 번호로 말하면 설명 가능하다고만 말한다.
+
+[MODE A: 전체 설명/비교/추천 이유]
+- “전체적으로/비교해줘/추천 이유”면 1)~8)까지 반드시 전부 출력, 각 1줄.
+
+[MODE B: 번호 지정 설명]
+- “2번 코디/4번 설명”처럼 번호가 있으면 해당 번호만 2~4문장.
+
+[MODE C: 단일 조언 질문]
+- “신발 뭐가 좋아?/색 추천/핏/계절/TPO” 같은 단일 질문이면 2~4문장으로 짧게만 답하고,
+  1~8 재나열 금지, 예상질문/되묻기 금지(정말 불명확할 때만 질문 1개 허용).
+
+[MODE D: 제일 추천]
+- “제일 추천/하나만 고르면”이면 1개만 고르고,
+  “조건 위반이 적다/점수가 높다” 같은 말은 하지 말고,
+  코디 포인트(활용도/조합 안정감/무드 일관성 등)로만 2~3개 이유를 설명한다.
+
+[MODE E: 불만/거절]
+- “N번 별로야/내 스타일 아냐”면
+  ‘추천이 취향과 어긋날 수 있음’을 자연스럽게 인정 + 그럴 법한 포인트 1문장 + 싫은 포인트 1개만 질문.
+  “공감합니다” 같은 상담봇 문장 금지.
+
+━━━━━━━━━━━━━━━━━━━━━━
+추가 규칙
+━━━━━━━━━━━━━━━━━━━━━━
+- 브랜드/가격: 메타만으로 정확히 모른다고 인정하고 아이템 유형 수준으로만 부드럽게.
+- 체형: 사용자가 텍스트로 체형을 말했을 때만. 이미지로 추정 금지. (피할 핏 1 + 추천 1~2 + 팁 1)
+
+━━━━━━━━━━━━━━━━━━━━━━
+추가 힌트
+━━━━━━━━━━━━━━━━━━━━━━
+- category={category}
+- gender={gender}
 
 추천 후보(items):
 {items_ctx}
 """.strip()
 
-    msgs = [{"role": "user", "content": req.text}]
+    msgs = [{"role": "user", "content": t}]
     reply = await call_openai_responses(msgs, system=system)
-
     return FollowupResp(answer=reply, requestId=req.requestId)
+
 
 
 # ---------
