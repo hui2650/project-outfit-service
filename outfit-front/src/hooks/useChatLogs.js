@@ -7,9 +7,9 @@ export const useChatLogs = () => {
   const appendTurn = React.useCallback(
     (turn) => {
       setChatSessions((prev) =>
-        prev.map((session) =>
+        (prev ?? []).map((session) =>
           session.sessionId === currentSessionId
-            ? { ...session, turns: [...session.turns, turn] }
+            ? { ...session, turns: [...(session.turns ?? []), turn] }
             : session,
         ),
       );
@@ -20,12 +20,14 @@ export const useChatLogs = () => {
   const updateTurn = React.useCallback(
     (turnId, updater) => {
       setChatSessions((prev) =>
-        prev.map((session) => {
+        (prev ?? []).map((session) => {
           if (session.sessionId !== currentSessionId) return session;
 
           return {
             ...session,
-            turns: session.turns.map((t) => (t.id === turnId ? updater(t) : t)),
+            turns: (session.turns ?? []).map((t) =>
+              t.id === turnId ? updater(t) : t,
+            ),
           };
         }),
       );

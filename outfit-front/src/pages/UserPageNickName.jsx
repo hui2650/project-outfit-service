@@ -8,6 +8,12 @@ const UserPageNickName = () => {
   const nav = useNavigate()
   const { leaving, handleStart } = useTransition()
 
+  const { resetGuest } = useAppData();
+
+  React.useEffect(() => {
+    resetGuest();
+  }, [resetGuest]);
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -22,10 +28,10 @@ const UserPageNickName = () => {
       <Header />
 
       <div className="flex flex-col items-center max-w-4xl">
-        <h1 className="text-4xl text-foreground mb-4 font-bold">
+        <h1 className="text-3xl text-foreground mb-4 font-bold">
           닉네임을 입력해주세요
         </h1>
-        <h3 className="text-lg text-secondary-foreground/80 mb-8">
+        <h3 className="text-base text-secondary-foreground/80 mb-8">
           당신의 스타일을 찾기 위해 닉네임을 알려주세요.
         </h3>
 

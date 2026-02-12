@@ -13,10 +13,22 @@ export const ChatPageProvider = ({ children }) => {
   // ===============================
   // 1) right panel mode
   // ===============================
+<<<<<<< Updated upstream
   const [rightPanelMode, setRightPanelMode] = React.useState('input') // "input" | "sessions"
   //  중복 요청 방지 락
   const submitLockRef = React.useRef(false)
   const openInputPanel = React.useCallback(() => setRightPanelMode('input'), [])
+=======
+  const [rightPanelMode, setRightPanelMode] = React.useState("input"); // "input" | "sessions"
+
+  // 중복 요청 방지 락
+  const submitLockRef = React.useRef(false);
+
+  const openInputPanel = React.useCallback(
+    () => setRightPanelMode("input"),
+    [],
+  );
+>>>>>>> Stashed changes
   const openSessionsPanel = React.useCallback(
     () => setRightPanelMode('sessions'),
     []
@@ -25,8 +37,13 @@ export const ChatPageProvider = ({ children }) => {
   // ===============================
   // 2) input states
   // ===============================
+<<<<<<< Updated upstream
   const { file, previewUrl, handleFile, clear } = useFileInput()
   const inputRef = React.useRef(null)
+=======
+  const { file, previewUrl, handleFile, clear, freezePreview } = useFileInput();
+  const inputRef = React.useRef(null);
+>>>>>>> Stashed changes
 
   const {
     textQuery,
@@ -43,8 +60,14 @@ export const ChatPageProvider = ({ children }) => {
   // ===============================
   // 3) chat logs + session
   // ===============================
+<<<<<<< Updated upstream
   const { chatLogs, appendTurn, updateTurn } = useChatLogs()
   const { addHistoryTurn, createNewSession } = useAppData()
+=======
+  const { chatLogs, appendTurn, updateTurn } = useChatLogs();
+  const { addHistoryTurn, createNewSession } = useAppData();
+
+>>>>>>> Stashed changes
   const { requestRecommend } = useRecommend({
     updateTurn,
     onHistoryTurn: addHistoryTurn,
@@ -58,7 +81,11 @@ export const ChatPageProvider = ({ children }) => {
   const latestDoneTurn = React.useMemo(() => {
     if (!Array.isArray(chatLogs)) return null
     for (let i = chatLogs.length - 1; i >= 0; i--) {
+<<<<<<< Updated upstream
       if (chatLogs[i].status === 'done') return chatLogs[i]
+=======
+      if (chatLogs[i]?.status === "done") return chatLogs[i];
+>>>>>>> Stashed changes
     }
     return null
   }, [chatLogs])
@@ -76,6 +103,7 @@ export const ChatPageProvider = ({ children }) => {
   }, [clear, reset])
 
   const handleNewChat = React.useCallback(() => {
+<<<<<<< Updated upstream
     createNewSession()
     resetRightInputs()
     openInputPanel() // 새 채팅은 무조건 input으로
@@ -84,6 +112,15 @@ export const ChatPageProvider = ({ children }) => {
   const handleSubmit = React.useCallback(async () => {
     // 이미 요청중이면 무시
     if (submitLockRef.current) return
+=======
+    createNewSession();
+    resetRightInputs();
+    openInputPanel();
+  }, [createNewSession, resetRightInputs, openInputPanel]);
+
+  const handleSubmit = React.useCallback(async () => {
+    if (submitLockRef.current) return;
+>>>>>>> Stashed changes
 
     if (!file) {
       setError({ code: 'NO_FILE', message: '이미지를 업로드해주세요' })
@@ -92,9 +129,11 @@ export const ChatPageProvider = ({ children }) => {
 
     setError(null)
 
+    const sentUrl = freezePreview();
+
     const newTurn = createTurn({
       file,
-      previewUrl,
+      previewUrl: sentUrl ?? previewUrl,
       textQuery,
       category,
       gender,
@@ -102,8 +141,12 @@ export const ChatPageProvider = ({ children }) => {
 
     appendTurn(newTurn)
 
+<<<<<<< Updated upstream
     // 락
     submitLockRef.current = true
+=======
+    submitLockRef.current = true;
+>>>>>>> Stashed changes
 
     try {
       await requestRecommend({
@@ -114,6 +157,7 @@ export const ChatPageProvider = ({ children }) => {
         gender,
       })
 
+<<<<<<< Updated upstream
       // 성공했을 때만 초기화
       resetRightInputs()
     } catch (e) {
@@ -121,6 +165,11 @@ export const ChatPageProvider = ({ children }) => {
     } finally {
       //  무조건 락 OFF
       submitLockRef.current = false
+=======
+      resetRightInputs();
+    } finally {
+      submitLockRef.current = false;
+>>>>>>> Stashed changes
     }
   }, [
     file,
@@ -131,17 +180,31 @@ export const ChatPageProvider = ({ children }) => {
     appendTurn,
     requestRecommend,
     resetRightInputs,
+<<<<<<< Updated upstream
   ])
+=======
+    freezePreview,
+  ]);
+>>>>>>> Stashed changes
 
   const handleSendChat = React.useCallback(
     async (text) => {
       if (!latestDoneTurn) return
 
+<<<<<<< Updated upstream
       const requestId = latestDoneTurn.requestId ?? null
       const carouselMsg = [...latestDoneTurn.messages]
         .reverse()
         .find((m) => m.type === 'carousel')
       const items = carouselMsg?.items ?? []
+=======
+      const requestId = latestDoneTurn.requestId ?? null;
+      const carouselMsg = [...(latestDoneTurn.messages ?? [])]
+        .reverse()
+        .find((m) => m?.type === "carousel");
+
+      const items = carouselMsg?.items ?? [];
+>>>>>>> Stashed changes
 
       await sendChat({
         turnId: latestDoneTurn.id,
@@ -154,6 +217,30 @@ export const ChatPageProvider = ({ children }) => {
     },
     [latestDoneTurn, sendChat, category, gender]
   )
+
+  React.useEffect(() => {
+    if (!Array.isArray(chatLogs) || chatLogs.length === 0) return;
+
+    const hasLoading = chatLogs.some((t) => t?.status === "loading");
+    const hasDone = chatLogs.some((t) => t?.status === "done");
+
+    if (hasLoading && !hasDone) {
+      createNewSession();
+      resetRightInputs();
+      openInputPanel();
+    }
+  }, [chatLogs, createNewSession, resetRightInputs, openInputPanel]);
+
+  React.useEffect(() => {
+    const nav = performance.getEntriesByType?.("navigation")?.[0];
+    const isReload = nav?.type === "reload";
+
+    if (isReload) {
+      createNewSession();
+      resetRightInputs();
+      openInputPanel();
+    }
+  }, [createNewSession, resetRightInputs, openInputPanel]);
 
   const value = React.useMemo(
     () => ({
@@ -186,7 +273,7 @@ export const ChatPageProvider = ({ children }) => {
       handleSendChat,
 
       // for session panel
-      setRightPanelMode, // (필요하면)
+      setRightPanelMode,
     }),
     [
       rightPanelMode,

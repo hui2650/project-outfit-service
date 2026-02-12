@@ -8,8 +8,14 @@ export const useFollowupChat = ({ updateTurn }) => {
     text,
     requestId = null,
     items = [],
+<<<<<<< Updated upstream
     category = '',
     gender = '',
+=======
+    category = "",
+    gender = "",
+    messages = [],
+>>>>>>> Stashed changes
   }) => {
     const userMsgId = uid()
     const assistantMsgId = uid()
@@ -31,7 +37,15 @@ export const useFollowupChat = ({ updateTurn }) => {
         items,
         category,
         gender,
+<<<<<<< Updated upstream
       })
+=======
+        guestId: guest?.guestId ?? null,
+        nickname: guest?.nickname ?? "",
+        style: guest?.style ?? "",
+        chatLogs: messages,
+      });
+>>>>>>> Stashed changes
 
       if (resp?.error) {
         // placeholder를 에러로 치환
@@ -52,7 +66,11 @@ export const useFollowupChat = ({ updateTurn }) => {
         return
       }
 
+<<<<<<< Updated upstream
       const answer = resp?.answer ?? '답변을 생성하지 못했어.'
+=======
+      const answer = resp?.answer ?? "답변을 생성하지 못했습니다.";
+>>>>>>> Stashed changes
 
       // 2) placeholder를 진짜 답변으로 치환
       updateTurn(turnId, (t) => ({
@@ -68,10 +86,17 @@ export const useFollowupChat = ({ updateTurn }) => {
           m.id === assistantMsgId
             ? {
                 id: m.id,
+<<<<<<< Updated upstream
                 role: 'assistant',
                 type: 'error',
                 message: '서버 연결이 불안정해',
                 code: 'NETWORK_ERROR',
+=======
+                role: "assistant",
+                type: "error",
+                message: "서버 연결이 불안정합니다.",
+                code: "NETWORK_ERROR",
+>>>>>>> Stashed changes
               }
             : m
         ),
