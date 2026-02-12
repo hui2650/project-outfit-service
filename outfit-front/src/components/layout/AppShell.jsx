@@ -5,20 +5,6 @@ import Header from "./Header";
 import { useLayout } from "../../store/layoutStore";
 
 const AppShell = ({ left, right }) => {
-<<<<<<< Updated upstream
-  const { panelCollapsed, setPanelCollapsed } = useLayout()
-
-  return (
-    <div className="h-screen flex justify-between relative mx-auto shadow">
-
-      {/* md 이하 + 패널 펼침 상태일 때 dim 배경 */}
-      {!panelCollapsed && (
-        <div
-          className={[
-            'fixed inset-0 z-20 bg-black/40 backdrop-blur-[0.5px]',
-            'hidden max-lg:block',
-          ].join(' ')}
-=======
   const { panelCollapsed, setPanelCollapsed } = useLayout();
 
   return (
@@ -30,7 +16,6 @@ const AppShell = ({ left, right }) => {
             "fixed inset-0 z-20 bg-black/40 backdrop-blur-[0.5px]",
             "hidden max-lg:block",
           ].join(" ")}
->>>>>>> Stashed changes
           onClick={() => setPanelCollapsed(true)}
           aria-hidden="true"
         />
