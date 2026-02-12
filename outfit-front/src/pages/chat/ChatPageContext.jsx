@@ -1,32 +1,35 @@
-import React from 'react'
-import { useFileInput } from '../../hooks/useFileInput'
-import { useChatLogs } from '../../hooks/useChatLogs'
-import { useRecommend } from '../../hooks/useRecommend'
-import { useInputOptions } from '../../hooks/useInputOptions'
-import { useAppData } from '../../store/appDataStore.jsx'
-import { useFollowupChat } from '../../hooks/useFollowupChat'
-import { createTurn } from '../../utils/createTurn'
+import React from "react";
+import { useFileInput } from "../../hooks/useFileInput";
+import { useChatLogs } from "../../hooks/useChatLogs";
+import { useRecommend } from "../../hooks/useRecommend";
+import { useInputOptions } from "../../hooks/useInputOptions";
+import { useAppData } from "../../store/appDataStore.jsx";
+import { useFollowupChat } from "../../hooks/useFollowupChat";
+import { createTurn } from "../../utils/createTurn";
 
-const ChatPageCtx = React.createContext(null)
+const ChatPageCtx = React.createContext(null);
 
 export const ChatPageProvider = ({ children }) => {
   // ===============================
   // 1) right panel mode
   // ===============================
-  const [rightPanelMode, setRightPanelMode] = React.useState('input') // "input" | "sessions"
+  const [rightPanelMode, setRightPanelMode] = React.useState("input"); // "input" | "sessions"
   //  중복 요청 방지 락
-  const submitLockRef = React.useRef(false)
-  const openInputPanel = React.useCallback(() => setRightPanelMode('input'), [])
+  const submitLockRef = React.useRef(false);
+  const openInputPanel = React.useCallback(
+    () => setRightPanelMode("input"),
+    [],
+  );
   const openSessionsPanel = React.useCallback(
-    () => setRightPanelMode('sessions'),
-    []
-  )
+    () => setRightPanelMode("sessions"),
+    [],
+  );
 
   // ===============================
   // 2) input states
   // ===============================
-  const { file, previewUrl, handleFile, clear } = useFileInput()
-  const inputRef = React.useRef(null)
+  const { file, previewUrl, handleFile, clear } = useFileInput();
+  const inputRef = React.useRef(null);
 
   const {
     textQuery,
@@ -36,61 +39,61 @@ export const ChatPageProvider = ({ children }) => {
     gender,
     setGender,
     reset,
-  } = useInputOptions()
+  } = useInputOptions();
 
-  const [error, setError] = React.useState(null)
+  const [error, setError] = React.useState(null);
 
   // ===============================
   // 3) chat logs + session
   // ===============================
-  const { chatLogs, appendTurn, updateTurn } = useChatLogs()
-  const { addHistoryTurn, createNewSession } = useAppData()
+  const { chatLogs, appendTurn, updateTurn } = useChatLogs();
+  const { addHistoryTurn, createNewSession } = useAppData();
   const { requestRecommend } = useRecommend({
     updateTurn,
     onHistoryTurn: addHistoryTurn,
-  })
+  });
 
-  const { sendChat } = useFollowupChat({ updateTurn })
+  const { sendChat } = useFollowupChat({ updateTurn });
 
   // ===============================
   // 4) derived
   // ===============================
   const latestDoneTurn = React.useMemo(() => {
-    if (!Array.isArray(chatLogs)) return null
+    if (!Array.isArray(chatLogs)) return null;
     for (let i = chatLogs.length - 1; i >= 0; i--) {
-      if (chatLogs[i].status === 'done') return chatLogs[i]
+      if (chatLogs[i].status === "done") return chatLogs[i];
     }
-    return null
-  }, [chatLogs])
+    return null;
+  }, [chatLogs]);
 
-  const chatDisabled = !latestDoneTurn
+  const chatDisabled = !latestDoneTurn;
 
   // ===============================
   // 5) handlers
   // ===============================
   const resetRightInputs = React.useCallback(() => {
-    setError(null)
-    clear()
-    if (inputRef.current) inputRef.current.value = ''
-    reset()
-  }, [clear, reset])
+    setError(null);
+    clear();
+    if (inputRef.current) inputRef.current.value = "";
+    reset();
+  }, [clear, reset]);
 
   const handleNewChat = React.useCallback(() => {
-    createNewSession()
-    resetRightInputs()
-    openInputPanel() // 새 채팅은 무조건 input으로
-  }, [createNewSession, resetRightInputs, openInputPanel])
+    createNewSession();
+    resetRightInputs();
+    openInputPanel(); // 새 채팅은 무조건 input으로
+  }, [createNewSession, resetRightInputs, openInputPanel]);
 
   const handleSubmit = React.useCallback(async () => {
     // 이미 요청중이면 무시
-    if (submitLockRef.current) return
+    if (submitLockRef.current) return;
 
     if (!file) {
-      setError({ code: 'NO_FILE', message: '이미지를 업로드해주세요' })
-      return
+      setError({ code: "NO_FILE", message: "이미지를 업로드해주세요" });
+      return;
     }
 
-    setError(null)
+    setError(null);
 
     const newTurn = createTurn({
       file,
@@ -98,12 +101,12 @@ export const ChatPageProvider = ({ children }) => {
       textQuery,
       category,
       gender,
-    })
+    });
 
-    appendTurn(newTurn)
+    appendTurn(newTurn);
 
     // 락
-    submitLockRef.current = true
+    submitLockRef.current = true;
 
     try {
       await requestRecommend({
@@ -112,15 +115,15 @@ export const ChatPageProvider = ({ children }) => {
         textQuery,
         category,
         gender,
-      })
+      });
 
       // 성공했을 때만 초기화
-      resetRightInputs()
+      resetRightInputs();
     } catch (e) {
       // 실패면 유지(재시도 UX)
     } finally {
       //  무조건 락 OFF
-      submitLockRef.current = false
+      submitLockRef.current = false;
     }
   }, [
     file,
@@ -131,17 +134,17 @@ export const ChatPageProvider = ({ children }) => {
     appendTurn,
     requestRecommend,
     resetRightInputs,
-  ])
+  ]);
 
   const handleSendChat = React.useCallback(
     async (text) => {
-      if (!latestDoneTurn) return
+      if (!latestDoneTurn) return;
 
-      const requestId = latestDoneTurn.requestId ?? null
+      const requestId = latestDoneTurn.requestId ?? null;
       const carouselMsg = [...latestDoneTurn.messages]
         .reverse()
-        .find((m) => m.type === 'carousel')
-      const items = carouselMsg?.items ?? []
+        .find((m) => m.type === "carousel");
+      const items = carouselMsg?.items ?? [];
 
       await sendChat({
         turnId: latestDoneTurn.id,
@@ -150,10 +153,11 @@ export const ChatPageProvider = ({ children }) => {
         items,
         category,
         gender,
-      })
+        messages: latestDoneTurn.messages,
+      });
     },
-    [latestDoneTurn, sendChat, category, gender]
-  )
+    [latestDoneTurn, sendChat, category, gender],
+  );
 
   const value = React.useMemo(
     () => ({
@@ -207,14 +211,14 @@ export const ChatPageProvider = ({ children }) => {
       handleSubmit,
       handleNewChat,
       handleSendChat,
-    ]
-  )
+    ],
+  );
 
-  return <ChatPageCtx.Provider value={value}>{children}</ChatPageCtx.Provider>
-}
+  return <ChatPageCtx.Provider value={value}>{children}</ChatPageCtx.Provider>;
+};
 
 export const useChatPage = () => {
-  const v = React.useContext(ChatPageCtx)
-  if (!v) throw new Error('useChatPage must be used within ChatPageProvider')
-  return v
-}
+  const v = React.useContext(ChatPageCtx);
+  if (!v) throw new Error("useChatPage must be used within ChatPageProvider");
+  return v;
+};
