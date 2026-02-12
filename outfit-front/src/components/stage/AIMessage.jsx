@@ -1,4 +1,4 @@
-import React from 'react'
+import React from "react";
 
 const TypingDots = () => {
   return (
@@ -7,32 +7,32 @@ const TypingDots = () => {
       <span className="w-2 h-2 rounded-full bg-foreground/60 animate-bounce [animation-delay:-0.15s]" />
       <span className="w-2 h-2 rounded-full bg-foreground/60 animate-bounce" />
     </div>
-  )
-}
+  );
+};
 
 const AIMessage = ({
-  content = '',
-  role = 'assistant',
-  variant = 'default',
+  content = "",
+  role = "assistant",
+  variant = "default",
 }) => {
-  const text = String(content ?? '').trim()
+  const text = String(content ?? "").trim();
 
   // 로딩 플레이스홀더 감지: '…'
-  const isTyping = role === 'assistant' && variant !== 'error' && text === '…'
+  const isTyping = role === "assistant" && variant !== "error" && text === "…";
 
   // 로딩이면 text가 비어도 렌더
-  if (!text && !isTyping) return null
+  if (!text && !isTyping) return null;
 
-  const isUser = role === 'user'
-  const isError = variant === 'error'
+  const isUser = role === "user";
+  const isError = variant === "error";
 
-  const align = isUser ? 'ml-auto mr-4' : 'mr-auto ml-4'
+  const align = isUser ? "ml-auto mr-4" : "mr-auto ml-4";
 
   const tone = isError
-    ? 'bg-red-50 text-red-700 border border-red-200'
+    ? "bg-red-50 text-red-700 border border-red-200"
     : isUser
-      ? 'bg-card/80 text-foreground'
-      : 'bg-muted/60 text-foreground'
+      ? "bg-card/80 text-foreground"
+      : "bg-muted/60 text-foreground";
 
   return (
     <div
@@ -40,7 +40,7 @@ const AIMessage = ({
     >
       {isTyping ? <TypingDots /> : text}
     </div>
-  )
-}
+  );
+};
 
-export default AIMessage
+export default AIMessage;
