@@ -4,7 +4,7 @@ const SubmitButton = ({ loading, onSubmit, isReadyToSubmit }) => {
   return (
     <div className="relative group w-full mt-4">
       <button
-        className={`text-base mt-4 w-full rounded-xl py-3 font-semibold transition-all duration-200 shadow-lg 
+        className={`mt-4 w-full rounded-xl py-3 font-semibold transition-all duration-200 shadow-lg 
     ${
       disabled
         ? "bg-gradient-to-r from-primary/90 to-accent/90 text-white/70 cursor-not-allowed opacity-60"

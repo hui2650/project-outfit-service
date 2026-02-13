@@ -16,9 +16,15 @@ const EmptyResult = () => {
   });
 
   return (
-    <div className="flex h-full w-full items-center justify-center">
+    <div className="flex h-full w-full items-center justify-center px-4">
       <div className="text-center max-w-md">
-        <h2 className="text-3xl text-foreground/95 font-medium mb-5 whitespace-pre-line">
+        <h2
+          className="
+          text-2xl md:text-3xl
+          text-foreground/95 font-medium mb-5
+          whitespace-pre-line leading-snug
+        "
+        >
           {out}
           <span
             className={[
@@ -33,7 +39,9 @@ const EmptyResult = () => {
 
         <p
           className={[
-            "text-base text-muted-foreground leading-relaxed transition-opacity duration-500 delay-150",
+            "text-sm md:text-base",
+            "text-muted-foreground leading-relaxed",
+            "transition-opacity duration-500 delay-150",
             done ? "opacity-100" : "opacity-0",
           ].join(" ")}
         >

@@ -9,7 +9,7 @@ const GenderChoice = ({ gender, onChangeGender }) => {
         <button
           key={g}
           type="button"
-          className={`px-3 py-1.5 rounded-full border transition-colors duration-150 ${
+          className={`text-xs md:text-sm px-3 py-1.5 rounded-full border transition-colors duration-150 ${
             gender === g
               ? "bg-gradient-to-r from-primary/90 to-accent/90 text-white"
               : "bg-secondary text-secondary-foreground border-gray-300 hover:bg-primary/10 hover:text-primary"

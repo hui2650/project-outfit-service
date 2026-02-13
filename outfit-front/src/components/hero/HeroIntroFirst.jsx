@@ -29,10 +29,10 @@ const HeroIntroFirst = ({ leaving, handleStart }) => {
       {/* 배경/오버레이: 이미지가 있으면 여기에 background-image 적용 */}
 
       <div className="w-full">
-        <main className="mx-auto grid max-w-6xl grid-cols-1 gap-10 px-6 pb-14 pt-6 md:grid-cols-2 md:items-center">
+        <main className="mx-auto flex justify-between itmes-center max-w-6xl px-6 pb-14 pt-6">
           {/* Left */}
 
-          <section className="">
+          <section className="mx-auto md:mx-0 flex flex-col md:justify-center ">
             <div className="text-xs tracking-widest text-primary/90">
               OUR SERVICE
             </div>
@@ -55,7 +55,7 @@ const HeroIntroFirst = ({ leaving, handleStart }) => {
               onClick={handleStart}
               whileHover={{ y: -5 }}
               whileTap={{ scale: 0.97 }}
-              className="mt-10 w-full max-w-md rounded-2xl bg-card/10 hover:bg-card/15 
+              className="mt-10 w-[320px] w-full lg:w-[450px] md:w-[320px] rounded-2xl bg-card/10 hover:bg-card/15 
               border border-solid border-foreground/15
               px-6 py-4 font-semibold flex items-center justify-center gap-3"
             >
@@ -75,11 +75,13 @@ const HeroIntroFirst = ({ leaving, handleStart }) => {
 
           {/* Right */}
 
-          <section className="flex justify-center md:justify-end">
-            <div className="w-[320px] h-[520px] rounded-[40px] border border-white/15 bg-white/5 shadow-2xl flex items-center justify-center">
-              {/* 여기에 이미지/목업 넣기 */}
-
-              <div className="w-[260px] h-[420px] rounded-[28px] bg-black/40 border border-white/10" />
+          <section className="flex hidden justify-end md:block">
+            <div className="w-[300px] h-[640px] bg-black rounded-[40px] border border-white/15 bg-white/5 shadow-2xl flex items-center justify-center overflow-hidden ">
+              <img
+                src="/mobile-img-1.PNG"
+                alt=""
+                className="h-full object-cover "
+              />
             </div>
           </section>
         </main>
