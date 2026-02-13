@@ -24,7 +24,7 @@ const SidePanelContent = ({ loading }) => {
   const pickFile = () => inputRef.current?.click();
 
   return (
-    <div className="h-full bg-card/90 p-8 flex-1 overflow-y-auto scrollbar-nice">
+    <div className="h-full bg-card/90 px-4 py-6 lg:p-8 flex-1 overflow-y-auto scrollbar-nice">
       <UploadDropzone
         previewUrl={previewUrl}
         onFile={handleFile}

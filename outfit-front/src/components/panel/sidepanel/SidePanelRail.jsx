@@ -10,7 +10,7 @@ const SidePanelRail = ({
   onOpenInput,
 }) => {
   return (
-    <div className="absolute right-0 top-0 h-full w-[62px] border-l border-border bg-card/80 flex flex-col items-center justify-between py-4">
+    <div className="hidden md:flex absolute right-0 top-0 h-full w-[62px] border-l border-border bg-card/80 flex-col items-center justify-between py-4">
       <div className="flex flex-col gap-4">
         {/*  패널 열기 버튼: 항상 input으로 */}
         <button

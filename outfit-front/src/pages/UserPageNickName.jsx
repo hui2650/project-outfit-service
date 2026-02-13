@@ -29,15 +29,15 @@ const UserPageNickName = () => {
         x: leaving ? -10 : 0,
       }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      className="h-screen w-full flex flex-col items-center justify-center bg-background"
+      className="h-[calc(100vh-56px)] relative top-14 w-full flex flex-col items-center justify-center bg-background px-4"
     >
       <Header />
 
-      <div className="flex flex-col items-center max-w-4xl">
-        <h1 className="text-3xl text-foreground mb-4 font-bold">
+      <div className=" flex flex-col items-center max-w-4xl">
+        <h1 className="text-2xl md:text-3xl lg:text-4xl text-foreground mb-6 font-bold text-center">
           닉네임을 입력해주세요
         </h1>
-        <h3 className="text-base text-secondary-foreground/80 mb-8">
+        <h3 className="text-sm md:text-base text-secondary-foreground/80 mb-8 text-center leading-relaxed">
           당신의 스타일을 찾기 위해 닉네임을 알려주세요.
         </h3>
 
@@ -45,11 +45,14 @@ const UserPageNickName = () => {
           type="text"
           value={nickname}
           onChange={(e) => setNickname(e.target.value)}
-          className="w-full h-10 rounded-xl p-3 bg-transparent outline-none text-md
-          border border-border
+          className="
+          w-full h-11 rounded-xl p-3 bg-transparent outline-none
+          text-sm md:text-base
+          border border-border  
           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
           focus-visible:ring-offset-2 focus-visible:ring-offset-background
-          placeholder:text-muted-foreground disabled:opacity-60"
+          placeholder:text-muted-foreground disabled:opacity-60
+        "
         />
       </div>
 

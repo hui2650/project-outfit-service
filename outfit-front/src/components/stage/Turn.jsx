@@ -38,7 +38,6 @@ const Turn = ({ turn, onSelectItem }) => {
           return (
             <AIMessage key={msg.id} content={msg.content} role={msg.role} />
           );
-          return <AIMessage key={msg.id} content={msg.content} role={msg.role} />
         }
 
         // 결과 캐러셀
@@ -53,7 +52,6 @@ const Turn = ({ turn, onSelectItem }) => {
           return (
             <AIMessage key={msg.id} content={msg.message} variant="error" />
           );
-          return <AIMessage key={msg.id} content={msg.message} variant="error" />
         }
 
         return null;

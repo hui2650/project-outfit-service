@@ -1,3 +1,4 @@
+// src/components/stage/AIMessage.jsx
 import React from "react";
 
 const TypingDots = () => {
@@ -18,33 +19,34 @@ function renderFormattedText(text) {
       {lines.map((line, i) => {
         const trimmed = line.trim();
 
-        if (!trimmed) {
-          return <div key={i} className="h-2" />;
-        }
+        if (!trimmed) return <div key={i} className="h-2" />;
 
-        // ### h3
         if (trimmed.startsWith("### ")) {
           return (
-            <h3 key={i} className="text-base font-semibold leading-snug">
+            <h3
+              key={i}
+              className="text-md md:text-base font-semibold leading-snug"
+            >
               {trimmed.replace("### ", "")}
             </h3>
           );
         }
 
-        // ## h2
         if (trimmed.startsWith("## ")) {
           return (
-            <h2 key={i} className="text-lg font-semibold leading-snug">
+            <h2
+              key={i}
+              className="text-base md:text-lg font-semibold leading-snug"
+            >
               {trimmed.replace("## ", "")}
             </h2>
           );
         }
 
-        // 일반 문단
         return (
           <p
             key={i}
-            className="text-base leading-relaxed whitespace-pre-wrap break-words"
+            className="text-md md:text-base leading-relaxed whitespace-pre-wrap break-words"
           >
             {trimmed}
           </p>
@@ -62,13 +64,12 @@ const AIMessage = ({
   const text = String(content ?? "").trim();
 
   const isTyping = role === "assistant" && variant !== "error" && text === "…";
-
   if (!text && !isTyping) return null;
 
   const isUser = role === "user";
   const isError = variant === "error";
 
-  const align = isUser ? "ml-auto mr-4" : "mr-auto ml-4";
+  const align = isUser ? "ml-auto md:mr-4" : "mr-auto md:ml-4";
 
   const tone = isError
     ? "bg-red-50 text-red-700 border border-red-200"
@@ -78,7 +79,14 @@ const AIMessage = ({
 
   return (
     <div
-      className={`${align} text-base mt-3 w-fit max-w-[420px] rounded-2xl px-4 py-3 shadow break-words ${tone}`}
+      className={[
+        align,
+        "mt-3 w-fit rounded-2xl shadow break-words",
+        "px-3 py-2 md:px-4 md:py-3",
+        "text-md md:text-base",
+        "max-w-[300px] md:max-w-[420px]",
+        tone,
+      ].join(" ")}
     >
       {isTyping ? (
         <TypingDots />

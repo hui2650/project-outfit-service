@@ -17,7 +17,7 @@ const SidePanelHeader = ({
             className="text-lg px-1.5 py-2 rounded-xl 
              text-primary/80 bg-primary/15"
           />
-          <h2 className="text-base font-foreground font-semibold leading-loose">
+          <h2 className="text-sm md:text-base font-foreground font-semibold leading-loose">
             {title}
           </h2>
         </div>

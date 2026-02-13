@@ -28,14 +28,14 @@ const UserPageStyle = () => {
         x: leaving ? -10 : 0,
       }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      className="h-screen w-full flex flex-col items-center justify-center bg-background"
+      className="h-[calc(100vh-56px)] relative top-14 w-full flex flex-col items-center justify-center bg-background px-4"
     >
       <Header />
-      <div className=" flex flex-col items-center max-w-4xl ">
-        <h1 className="text-3xl text-foreground mb-4 font-bold">
+      <div className="flex flex-col items-center max-w-4xl ">
+        <h1 className="text-2xl md:text-3xl lg:text-4xl text-foreground mb-6 font-bold">
           어떤 스타일을 좋아하세요?
         </h1>
-        <h3 className="text-base text-secondary-foreground/80 mb-8">
+        <h3 className="text-sm md:text-base text-secondary-foreground/80 mb-8">
           선호하시는 스타일에 맞춰서 추천해드릴게요
         </h3>
       </div>
@@ -47,7 +47,7 @@ const UserPageStyle = () => {
             className={`
               h-40 rounded-2xl border border-border bg-card
               flex items-center justify-center
-              text-xl font-semibold text-foreground
+              text-lg md:text-xl font-semibold text-foreground
               cursor-pointer transition-all duration-200
               hover:bg-muted hover:scale-[1.02]
               ${selected === style.key ? "ring-2 ring-ring scale-[1.02]" : ""}
@@ -63,7 +63,6 @@ const UserPageStyle = () => {
           type="button"
           disabled={!selected}
           className="text-md px-5 py-2.5 rounded-lg bg-primary text-white font-semibold  disabled:opacity-60"
-          // onClick={() => handleStart(() => nav("/chat"))}
           onClick={() =>
             handleStart(() => {
               if (!selected) return;

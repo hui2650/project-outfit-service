@@ -28,10 +28,7 @@ const AppShell = ({ left, right }) => {
       </div>
 
       {/* 우측 패널 */}
-      <div className="h-full">
-        {right}
-      </div>
-
+      <div className="h-full">{right}</div>
     </div>
   );
 };
