@@ -48,7 +48,7 @@
 
 ## 아키텍처 다이어그램
 
-![Uploading image.png…]()
+<img width="1351" height="1024" alt="다이어그램" src="https://github.com/user-attachments/assets/14955c7c-dfbc-4736-9e7d-16650e2c5fab" />
 
 ---
 
