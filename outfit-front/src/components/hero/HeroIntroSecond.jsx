@@ -1,8 +1,8 @@
-import React from "react";
+import React from 'react'
 
-import { motion } from "framer-motion";
+import { motion } from 'framer-motion'
 
-import HeroSectionWrapper from "./HeroSectionWrapper";
+import HeroSectionWrapper from './HeroSectionWrapper'
 
 const HeroIntroSecond = ({ leaving, handleStart }) => {
   const bgStyle = {
@@ -12,15 +12,11 @@ const HeroIntroSecond = ({ leaving, handleStart }) => {
         hsl(var(--background) / 0.8),
         hsl(var(--background) / 0.9)),
         url('/hero-bg-2.jpg')`,
-  };
+  }
 
   return (
     <HeroSectionWrapper
-      className="h-full w-full flex items-center
-
-      bg-[linear-gradient(to_bottom,hsl(var(--background)/0.6),hsl(var(--background)/0.4),hsl(var(--background)/0.7)),url(/hero-bg.jpg)]
-
-      bg-cover bg-center "
+      className="h-full w-full bg-cover bg-center flex items-center"
       initial={{ opacity: 0 }}
       animate={{
         opacity: leaving ? 0 : 1,
@@ -31,7 +27,7 @@ const HeroIntroSecond = ({ leaving, handleStart }) => {
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
     >
       <div className="w-full">
-        <main className="mx-auto flex justify-between itmes-center max-w-6xl px-6 pb-14 pt-6">
+        <main className="mx-auto flex justify-between items-center max-w-6xl px-6 pb-14 pt-6">
           {/* Left */}
 
           <section className="mx-auto md:mx-0 flex flex-col md:justify-center">
@@ -39,10 +35,13 @@ const HeroIntroSecond = ({ leaving, handleStart }) => {
               How It Works
             </div>
 
-            <h1 className="mt-4 text-5xl font-extrabold text-foreground leading-tight">
+            <h1 className="mt-4 text-5xl font-extrabold leading-tight text-foreground">
               사진 한 장으로
               <br />
-              <span className="text-foreground/95">OUTFIT MATCH</span>
+              <span className="text-foreground/95">
+                OUTFIT <br className="md:hidden" />
+                MATCH
+              </span>
             </h1>
 
             <p className="mt-6 max-w-md text-secondary-foreground/80 leading-relaxed">
@@ -57,7 +56,7 @@ const HeroIntroSecond = ({ leaving, handleStart }) => {
               onClick={handleStart}
               whileHover={{ y: -5 }}
               whileTap={{ scale: 0.97 }}
-              className="mt-10 w-[320px] w-full lg:w-[450px] md:w-[320px] rounded-2xl bg-card/10 hover:bg-card/15 
+              className="mt-10 w-[270px] lg:w-[450px] md:w-[320px] rounded-2xl bg-card/10 hover:bg-card/15 
               border border-solid border-foreground/15
               px-6 py-4 font-semibold flex items-center justify-center gap-3"
             >
@@ -67,11 +66,11 @@ const HeroIntroSecond = ({ leaving, handleStart }) => {
 
           {/* Right */}
 
-          <section className="flex justify-center -end hidden md:block">
+          <section className="flex justify-center-end hidden md:block">
             <div className="w-[300px] h-[640px] rounded-[40px] border border-white/15 bg-white/5 shadow-2xl flex items-center justify-center overflow-hidden">
               {/* 여기에 이미지/목업 넣기 */}
               <img
-                src="mobile-img-2.PNG"
+                src="/mobile-img-2.PNG"
                 alt=""
                 className="h-full object-cover"
               />
@@ -80,7 +79,7 @@ const HeroIntroSecond = ({ leaving, handleStart }) => {
         </main>
       </div>
     </HeroSectionWrapper>
-  );
-};
+  )
+}
 
-export default HeroIntroSecond;
+export default HeroIntroSecond

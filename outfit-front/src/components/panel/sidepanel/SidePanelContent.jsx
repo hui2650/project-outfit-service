@@ -1,10 +1,10 @@
-import React from "react";
-import UploadDropzone from "../UploadDropzone";
-import GenderChoice from "../GenderChoice";
-import CategoryChoice from "../CategoryChoice";
-import TextQueryBox from "../TextQueryBox";
-import SubmitButton from "../SubmitButton";
-import { useChatPage } from "../../../pages/chat/ChatPageContext.jsx"; // 경로 맞춰
+import React from 'react'
+import UploadDropzone from '../UploadDropzone'
+import GenderChoice from '../GenderChoice'
+import CategoryChoice from '../CategoryChoice'
+import TextQueryBox from '../TextQueryBox'
+import SubmitButton from '../SubmitButton'
+import { useChatPage } from '../../../pages/chat/ChatPageContext.jsx' // 경로 맞춰
 
 const SidePanelContent = ({ loading }) => {
   const {
@@ -19,9 +19,9 @@ const SidePanelContent = ({ loading }) => {
     gender,
     setGender,
     file,
-  } = useChatPage();
+  } = useChatPage()
 
-  const pickFile = () => inputRef.current?.click();
+  const pickFile = () => inputRef.current?.click()
 
   return (
     <div className="h-full bg-card/90 px-4 py-6 lg:p-8 flex-1 overflow-y-auto scrollbar-nice">
@@ -34,7 +34,7 @@ const SidePanelContent = ({ loading }) => {
       <button
         className="mt-4 w-full rounded-xl 
         bg-gradient-to-r from-primary/90 to-accent/90
-        text-white text-base
+        text-white text-sm md:text-base
         py-3 font-semibold
         hover:opacity-90
         transition
@@ -57,7 +57,7 @@ const SidePanelContent = ({ loading }) => {
         isReadyToSubmit={!!file && !!category && !!gender}
       />
     </div>
-  );
-};
+  )
+}
 
-export default SidePanelContent;
+export default SidePanelContent

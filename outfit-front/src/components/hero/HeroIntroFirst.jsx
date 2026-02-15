@@ -1,8 +1,8 @@
-import React from "react";
+import React from 'react'
 
-import { motion } from "framer-motion";
+import { motion } from 'framer-motion'
 
-import HeroSectionWrapper from "./HeroSectionWrapper";
+import HeroSectionWrapper from './HeroSectionWrapper'
 
 const HeroIntroFirst = ({ leaving, handleStart }) => {
   const bgStyle = {
@@ -12,7 +12,7 @@ const HeroIntroFirst = ({ leaving, handleStart }) => {
         hsl(var(--background) / 0.8),
         hsl(var(--background) / 0.9)),
         url('/hero-bg.jpg')`,
-  };
+  }
 
   return (
     <HeroSectionWrapper
@@ -29,7 +29,7 @@ const HeroIntroFirst = ({ leaving, handleStart }) => {
       {/* 배경/오버레이: 이미지가 있으면 여기에 background-image 적용 */}
 
       <div className="w-full">
-        <main className="mx-auto flex justify-between itmes-center max-w-6xl px-6 pb-14 pt-6">
+        <main className="mx-auto flex justify-between items-center max-w-6xl px-6 pb-14 pt-6">
           {/* Left */}
 
           <section className="mx-auto md:mx-0 flex flex-col md:justify-center ">
@@ -55,7 +55,7 @@ const HeroIntroFirst = ({ leaving, handleStart }) => {
               onClick={handleStart}
               whileHover={{ y: -5 }}
               whileTap={{ scale: 0.97 }}
-              className="mt-10 w-[320px] w-full lg:w-[450px] md:w-[320px] rounded-2xl bg-card/10 hover:bg-card/15 
+              className="mt-10 w-[270px] lg:w-[450px] md:w-[320px] rounded-2xl bg-card/10 hover:bg-card/15 
               border border-solid border-foreground/15
               px-6 py-4 font-semibold flex items-center justify-center gap-3"
             >
@@ -87,7 +87,7 @@ const HeroIntroFirst = ({ leaving, handleStart }) => {
         </main>
       </div>
     </HeroSectionWrapper>
-  );
-};
+  )
+}
 
-export default HeroIntroFirst;
+export default HeroIntroFirst
