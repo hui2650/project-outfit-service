@@ -1,6 +1,6 @@
-import React from "react";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faImage } from "@fortawesome/free-solid-svg-icons";
+import React from 'react'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faImage } from '@fortawesome/free-solid-svg-icons'
 
 const SidePanelHeader = ({
   onCollapse,
@@ -14,7 +14,7 @@ const SidePanelHeader = ({
         <div className="flex items-center gap-3">
           <FontAwesomeIcon
             icon={faImage}
-            className="text-lg px-1.5 py-2 rounded-xl 
+            className="text-base px-1 py-1.5 rounded-[9px] md:text-lg md:px-1.5 md:py-2 md:rounded-xl 
              text-primary/80 bg-primary/15"
           />
           <h2 className="text-sm md:text-base font-foreground font-semibold leading-loose">
@@ -28,7 +28,7 @@ const SidePanelHeader = ({
           onClick={onToggleMode}
           className="text-xs px-2 py-1 rounded-md border border-border hover:bg-muted/80"
         >
-          {isSessionMode ? "아이템 입력" : "이전 채팅"}
+          {isSessionMode ? '아이템 입력' : '이전 채팅'}
         </button>
       </div>
       {/* 접는 버튼(헤더 우측) */}
@@ -58,7 +58,7 @@ const SidePanelHeader = ({
         </svg>
       </button>
     </div>
-  );
-};
+  )
+}
 
-export default SidePanelHeader;
+export default SidePanelHeader

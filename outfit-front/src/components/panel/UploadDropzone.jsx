@@ -32,7 +32,7 @@ const UploadDropzone = ({ previewUrl, onFile, inputRef }) => {
           <div className="mb-6">
             <FontAwesomeIcon
               icon={faImage}
-              className=" text-4xl px-3.5 py-4 rounded-[24px] transition-colors
+              className="text-3xl md:text-4xl px-2.5 py-3 md:px-3.5 md:py-4 rounded-2xl md:rounded-3xl transition-colors
              text-primary/80 bg-primary/15
              group-hover:bg-primary/25
              group-hover:text-primary/90"
