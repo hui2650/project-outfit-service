@@ -50,20 +50,37 @@ def build_items_ctx(items: List[Dict[str, Any]], limit: int = 8) -> str:
 
 def apply_greeting_prefix(answer: str, nickname: str, use_nickname: bool) -> str:
     a = (answer or "").lstrip()
-    if a.startswith("안녕하세요"):
-        return a  # 중복 방지
+    if not a:
+        return a
 
     nick = (nickname or "").strip()
+
+    # 이미 닉네임으로 시작하면 그대로 둔다
+    if nick and a.startswith(f"{nick}님"):
+        return a
+
+    # 닉네임 사용이 결정된 경우에만 1회 프리픽스
     if use_nickname and nick:
-        return f"안녕하세요 {nick}님, {a}"
-    return f"안녕하세요, {a}"
+        return f"{nick}님, {a}"
+
+    return a
+
+
+
+def strip_server_prefix(text: str, nickname: str) -> str:
+    t = (text or "").lstrip()
+    if not t:
+        return t
+
+    nick = (nickname or "").strip()
+    if nick and t.startswith(f"{nick}님,"):
+        return t[len(f"{nick}님,"):].lstrip()
+
+    return t
+
 
 
 async def handle_followup_chat(req: FollowupReq) -> FollowupResp:
-    """
-    req: FollowupReq (main.py에서 정의한 pydantic 모델 그대로 받기)
-    return: {"answer": str, "requestId": Optional[str]}
-    """
     t = (req.text or "").strip()
 
     allow = is_fashion_query(t) or is_greeting(t) or is_help_query(t)
@@ -71,11 +88,10 @@ async def handle_followup_chat(req: FollowupReq) -> FollowupResp:
         return FollowupResp(
             answer="이 대화는 코디/스타일 설명과 앱 사용 안내만 도와줄 수 있어. 코디 번호(1~8)나 원하는 스타일로 물어봐줘!",
             requestId=req.requestId,
-        )   
+        )
 
     category = (req.category or "").strip()
     gender = (req.gender or "").strip()
-
     items_ctx = build_items_ctx(req.items or [])
 
     use_nickname = decide_use_nickname(req.nickname, t, followup_prob=0.40)
@@ -91,16 +107,15 @@ async def handle_followup_chat(req: FollowupReq) -> FollowupResp:
 
     msgs: List[Dict[str, str]] = []
     if (req.prevAnswer or "").strip():
-        msgs.append({"role": "assistant", "content": req.prevAnswer.strip()})
+        prev = strip_server_prefix(req.prevAnswer, req.nickname)
+        if prev:
+            msgs.append({"role": "assistant", "content": prev})
     msgs.append({"role": "user", "content": t})
 
     reply = await call_openai_responses(msgs, system=system)
     reply = str(reply or "")
 
-    # 니 요구사항: "무조건 안녕하세요 ㅇㅇ님" 시작
+    # 서버에서만 1회 프리픽스(닉네임)
     reply = apply_greeting_prefix(reply, req.nickname, use_nickname)
 
-    return FollowupResp(
-        answer=reply,
-        requestId=req.requestId,
-    )
+    return FollowupResp(answer=reply, requestId=req.requestId)
