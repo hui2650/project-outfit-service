@@ -1,8 +1,11 @@
 // src/hooks/useFollowupChat.js
 import { askFollowup } from '../api/chat'
 import { uid } from '../utils/uid'
+import { useAppData } from '../store/appDataStore.jsx'
 
 export const useFollowupChat = ({ updateTurn }) => {
+  const { guest } = useAppData()
+
   const sendChat = async ({
     turnId,
     text,
@@ -10,6 +13,7 @@ export const useFollowupChat = ({ updateTurn }) => {
     items = [],
     category = '',
     gender = '',
+    messages = [],
   }) => {
     const userMsgId = uid()
     const assistantMsgId = uid()
@@ -18,9 +22,9 @@ export const useFollowupChat = ({ updateTurn }) => {
     updateTurn(turnId, (t) => ({
       ...t,
       messages: [
-        ...t.messages,
+        ...(t.messages ?? []),
         { id: userMsgId, role: 'user', type: 'text', content: text },
-        { id: assistantMsgId, role: 'assistant', type: 'text', content: '…' }, // 로딩 표시
+        { id: assistantMsgId, role: 'assistant', type: 'text', content: '…' },
       ],
     }))
 
@@ -31,13 +35,16 @@ export const useFollowupChat = ({ updateTurn }) => {
         items,
         category,
         gender,
+        chatLogs: messages,
+        guestId: guest?.guestId ?? null,
+        nickname: guest?.nickname ?? '',
+        style: guest?.style ?? '',
       })
 
       if (resp?.error) {
-        // placeholder를 에러로 치환
         updateTurn(turnId, (t) => ({
           ...t,
-          messages: t.messages.map((m) =>
+          messages: (t.messages ?? []).map((m) =>
             m.id === assistantMsgId
               ? {
                   id: m.id,
@@ -52,25 +59,25 @@ export const useFollowupChat = ({ updateTurn }) => {
         return
       }
 
-      const answer = resp?.answer ?? '답변을 생성하지 못했어.'
+      const answer = resp?.answer ?? '답변을 생성하지 못했습니다.'
 
       // 2) placeholder를 진짜 답변으로 치환
       updateTurn(turnId, (t) => ({
         ...t,
-        messages: t.messages.map((m) =>
+        messages: (t.messages ?? []).map((m) =>
           m.id === assistantMsgId ? { ...m, type: 'text', content: answer } : m
         ),
       }))
     } catch (e) {
       updateTurn(turnId, (t) => ({
         ...t,
-        messages: t.messages.map((m) =>
+        messages: (t.messages ?? []).map((m) =>
           m.id === assistantMsgId
             ? {
                 id: m.id,
                 role: 'assistant',
                 type: 'error',
-                message: '서버 연결이 불안정해',
+                message: '서버 연결이 불안정합니다.',
                 code: 'NETWORK_ERROR',
               }
             : m

@@ -32,13 +32,13 @@ const UploadDropzone = ({ previewUrl, onFile, inputRef }) => {
           <div className="mb-6">
             <FontAwesomeIcon
               icon={faImage}
-              className=" text-4xl px-3.5 py-4 rounded-[24px] transition-colors
+              className="text-3xl md:text-4xl px-2.5 py-3 md:px-3.5 md:py-4 rounded-2xl md:rounded-3xl transition-colors
              text-primary/80 bg-primary/15
              group-hover:bg-primary/25
              group-hover:text-primary/90"
             />
           </div>
-          <div className="text-foreground text-sm text-center px-6">
+          <div className="text-foreground/80 text-xs md:text-sm text-center px-6">
             이미지를 드래그하거나
             <br />
             클릭해서 업로드하세요
