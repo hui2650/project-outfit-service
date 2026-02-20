@@ -1,33 +1,20 @@
-import { uid } from "./uid.js";
+import { uid } from './uid.js'
 
 /**
- * createTurn({ file, previewUrl, textQuery, category, gender })
+ * createTurn()
  *
- * "turn" 이란?
- * - 사용자가 "추천받기" 버튼을 한 번 눌렀을 때 생성되는 하나의 요청 단위
- * - 채팅 UI에서 말풍선 묶음 1세트라고 보면 됨
+ * turn = "추천 요청 1회" 단위
+ * - 사용자가 이미지/옵션 선택 후 "추천받기"를 눌렀을 때 만들어지는 한 덩어리 상태
  *
- * turn이 필요한 이유
- * 1) 요청 단위로 로딩/완료/에러 상태를 따로 관리할 수 있음
- * 2) 나중에 히스토리 탭 만들 때 "요청 기록"을 turn 단위로 저장/표시 가능
- * 3) 같은 turn 안에 messages를 쌓아 "대화 흐름"을 만들 수 있음
+ * 왜 turn이 중요한가
+ * - 채팅 UI는 메시지가 계속 쌓이지만, 추천 결과는 요청 단위로 묶여야 UX가 깔끔함
+ * - 로딩/완료/에러는 메시지가 아니라 "요청 단위"로 관리하는 게 맞다
+ * - 히스토리도 "요청 단위 기록"이 가장 자연스럽다
  *
- * 파라미터 설명
- * - file: 사용자가 업로드한 실제 File 객체(서버로 보낼 원본)
- * - previewUrl: 브라우저에서만 쓰는 blob url (화면 미리보기용)
- * - textQuery: 사용자가 입력한 텍스트(검색 보조)
- * - category/gender: 필수 선택값(추천 정확도 향상)
- *
- * 반환하는 turn 구조
- * - id: 프론트에서 만든 turn id (UI 관리용)
- * - requestId: 서버가 만든 requestId (서버/DB 식별용) -> 응답 오면 채워짐
- * - createdAt: 정렬/시간 표시용
- * - input: 이 turn을 만든 입력 스냅샷(히스토리/재추천에 필요)
- * - status: loading/done/error 상태
- * - error: 에러 정보(있을 때만)
- * - messages: 실제 UI가 렌더링할 말풍선 배열 (중요!)
+ * input 스냅샷을 저장하는 이유
+ * - 요청 당시의 file/previewUrl/textQuery/category/gender를 그대로 재현 가능
+ * - "같은 조건으로 다시 추천" 기능을 만들 때 추가 입력 없이 재요청 가능
  */
-
 export const createTurn = ({
   file,
   previewUrl,
@@ -37,69 +24,79 @@ export const createTurn = ({
 }) => {
   return {
     /**
-     * turn 고유 id (클라이언트 생성)
-     * - 예: "turn_1700000000000"
-     * - server requestId와 역할이 다름 (이건 UI용)
+     * id: 프론트에서 만든 turn 식별자
+     *
+     * 특징
+     * - UI에서 Turn 컴포넌트 key로 쓰고
+     * - updateTurnById / updateTurn 같은 함수로 "턴 하나"를 찾아 업데이트하는 기준이 됨
+     *
+     * 주의
+     * - Date.now()는 같은 ms에 두 개가 생성될 가능성이 아주 낮지만 존재
+     * - 완벽히 안전하려면 uid()로 바꾸는 것도 방법
      */
-    id: "turn_" + Date.now(),
+    id: 'turn_' + Date.now(),
+
     /**
-     * requestId (서버 생성)
-     * - 서버에서 요청을 식별하는 값
-     * - 첫 요청 생성 시점에는 아직 없으므로 null
-     * - 응답 받으면 Home/useRecommend에서 updateTurn으로 채움
+     * requestId: 서버가 부여하는 요청 식별자
+     * - 처음에는 없으므로 null
+     * - 서버 응답이 오면 turn 업데이트로 채워 넣는다
+     * - followup chat에서 대화 문맥을 requestId로 이어가면 서버 측 추적이 쉬워짐
      */
     requestId: null,
+
     /**
-     * turn 생성 시간(프론트)
-     * - 히스토리 정렬, 시간 표시 등에 사용 가능
+     * createdAt: turn 생성 시간
+     * - 히스토리/정렬/표시에서 사용
      */
     createdAt: Date.now(),
+
     /**
-     * input 스냅샷
-     * - 이 turn을 만든 "원본 입력"을 저장해둠
-     * - 나중에 "같은 이미지로 다시 추천" 같은 재요청을 할 때 필요
-     * - 히스토리 탭에서 "사용자가 어떤 조건으로 추천받았는지" 재현 가능
+     * input: 이 turn의 입력 스냅샷
+     * - file: 서버 업로드용 원본 (FormData로 보낼 대상)
+     * - previewUrl: 화면 표시용 blob url (브라우저 전용)
+     * - textQuery/category/gender: 추천 조건
      */
     input: {
-      file, // 서버로 보낼 원본 File
-      previewUrl, // 화면 미리보기 blob url
+      file,
+      previewUrl,
       textQuery,
       category,
       gender,
     },
+
     /**
-     * status
-     * - 'loading': 서버 응답 기다리는 중
-     * - 'done': 정상 응답 받아서 결과 렌더 가능
-     * - 'error': 요청 실패(네트워크/서버에러)
+     * status: turn 레벨 상태
+     * - loading: 추천 생성 중 (로딩 Turn 렌더링)
+     * - done: 결과를 messages로 렌더 가능
+     * - error: error 객체와 함께 오류 UI 표시 가능
      */
-    status: "loading",
+    status: 'loading',
+
     /**
-     * error 객체
-     * - status가 error일 때만 채움
-     * - 예: { code: 'NETWORK_ERROR', message: '서버 연결이 불안정해' }
+     * error: 에러 정보(있으면)
+     * - 네트워크 실패나 서버에서 내려주는 코드 등을 저장
+     * - turn 단위로 "어떤 요청이 실패했는지" 보여줄 수 있음
      */
     error: null,
+
     /**
-     * messages: 채팅 UI 렌더 기준 데이터
-     * - turn을 만들자마자 유저 input 메시지를 바로 넣는다
-     *   => "요청 보내는 즉시 화면에 유저 말풍선이 뜨게" 할 때 유용
+     * messages: UI 렌더링 기준 데이터
      *
-     * msg 구조 통일
-     * - id: uid() (React key / 메시지 구분)
-     * - role: 'user' | 'assistant'
-     * - type: 'input' | 'text' | 'carousel' | 'error'
+     * 설계 포인트
+     * - turn 생성 직후에도 사용자 입력 미리보기(input 메시지)를 넣어
+     *   화면에 "내가 보낸 요청"이 바로 반영되게 만든다
      *
-     * 여기서는 "사용자가 보낸 입력"을 type='input'으로 넣는다.
+     * type: 'input'
+     * - ChatPreview에서 이미지+텍스트를 렌더하는 용도
      */
     messages: [
       {
         id: uid(),
-        role: "user",
-        type: "input",
-        previewUrl, // UserInputPreview에서 이미지 미리보기로 사용
-        text: textQuery, // UserInputPreview에서 텍스트 미리보기로 사용
+        role: 'user',
+        type: 'input',
+        previewUrl,
+        text: textQuery,
       },
     ],
-  };
-};
+  }
+}

@@ -1,3 +1,9 @@
+/*
+SubmitButton
+- 입력값 충족 여부(isReadyToSubmit)와 로딩 상태(loading)에 따라 비활성/문구를 제어
+- 준비되지 않은 상태에서는 안내 문구를 툴팁처럼 노출
+*/
+
 const SubmitButton = ({ loading, onSubmit, isReadyToSubmit }) => {
   const disabled = loading || !isReadyToSubmit
 

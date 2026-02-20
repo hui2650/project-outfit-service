@@ -1,28 +1,13 @@
-/** 
-props
-
-items (favorites)
-
-onClickItem (상세로 이동 or 모달)
-
-onRemove, onAddToCollection 같은 액션(선택)
-
-내부는:
-
-SectionHeader
-
-EmptyState or FavoritesGrid
-*/
-
+// src/components/user/FavoritesSection.jsx
 import React from 'react'
 import EmptyState from './EmptyState.jsx'
 
-/**
- * FavoritesSection
- * props:
- * - favorites: [{ itemKey, imageUrl, title, ... }]
- * - onClickItem: (item) => void
- */
+/*
+FavoritesSection
+- 좋아요로 저장한 코디 목록 섹션
+- favorites는 itemKey로 식별 가능한 결과 아이템 배열
+- 클릭 시 모달/상세보기로 이동하는 콜백(onClickItem)을 외부에서 주입
+*/
 const FavoritesSection = ({ favorites = [], onClickItem }) => {
   return (
     <section className="mt-8">

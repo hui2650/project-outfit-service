@@ -1,6 +1,9 @@
-// file input 숨겨두고  클릭/드랍 처리
-// 선택된 파일을 상위로 전달 onFile(file)
-// previewUrl은 상위에서 만들어 전달받아 표시만함
+/*
+UploadDropzone
+- 파일 input은 숨기고, 클릭/드래그 앤 드롭으로 파일 선택을 유도하는 UI
+- 선택된 파일은 onFile(file)로 상위(ChatPageContext)로 전달
+- previewUrl은 상위에서 생성된 URL을 전달받아 화면에 표시만 담당
+*/
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faImage } from '@fortawesome/free-solid-svg-icons'
@@ -46,7 +49,7 @@ const UploadDropzone = ({ previewUrl, onFile, inputRef }) => {
         </div>
       )}
 
-      {/* 숨김처리 */}
+      {/* file input은 숨김 처리하고 ref로 제어 */}
       <input
         ref={inputRef}
         type="file"

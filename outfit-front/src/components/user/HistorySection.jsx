@@ -1,28 +1,13 @@
-/** 
-HistorySection + HistoryCard
-
-HistoryCard는 “요청 단위 카드”로 고정하는 게 좋아.
-
-meta 줄: 날짜 / category / gender / textQuery
-
-preview grid: 4장
-
-버튼: “상세 보기”, “다시 추천(재요청)” (가능하면)
-
-그리고 key는 지금처럼 fallback 주는 건 임시방편이야.
-
-가능하면 history 항목에 항상 고유 id (ex: historyId)를 만들어두는 게 안정적.
-*/
-
+// src/components/user/HistorySection.jsx
 import React from 'react'
 import EmptyState from './EmptyState.jsx'
 
-/**
- * HistorySection
- * props:
- * - history: [{ turnId, requestId, createdAt, input:{category,gender}, items:[...] }]
- * - onClickHistory: (historyItem) => void
- */
+/*
+HistorySection
+- 추천 요청 단위 히스토리를 보여주는 섹션
+- 각 항목은 input(category/gender/텍스트) + items(추천 결과) 요약으로 구성
+- 클릭 시 해당 요청의 결과를 모달로 열기 위한 콜백(onClickHistory)을 외부에서 주입
+*/
 const HistorySection = ({ history = [], onClickHistory }) => {
   return (
     <section className="mt-10">
@@ -49,12 +34,14 @@ const HistorySection = ({ history = [], onClickHistory }) => {
               onClick={() => onClickHistory?.(h)}
               className="w-full text-left rounded-xl border p-4 hover:bg-accent/40 transition-colors"
             >
+              {/* 메타 정보: 시간 + 카테고리/성별 */}
               <div className="text-sm text-muted-foreground">
                 {new Date(h.createdAt ?? Date.now()).toLocaleString()}
                 {' · '}
                 {h.input?.category} / {h.input?.gender}
               </div>
 
+              {/* 결과 미리보기: 최대 4장만 노출 */}
               <div className="mt-3 grid grid-cols-4 gap-3">
                 {(h.items ?? []).slice(0, 4).map((it) => (
                   <img

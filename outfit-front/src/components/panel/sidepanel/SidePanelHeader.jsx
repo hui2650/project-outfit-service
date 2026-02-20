@@ -2,6 +2,13 @@ import React from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faImage } from '@fortawesome/free-solid-svg-icons'
 
+/*
+SidePanelHeader
+- 패널 상단 타이틀/모드 전환/접기 버튼 영역
+- isSessionMode 값에 따라 토글 버튼 텍스트가 바뀜
+- onToggleMode는 "입력 패널 ↔ 이전 채팅 패널" 전환에 사용
+*/
+
 const SidePanelHeader = ({
   onCollapse,
   title,
@@ -22,7 +29,7 @@ const SidePanelHeader = ({
           </h2>
         </div>
 
-        {/* 🔁 토글 버튼 */}
+        {/* 🔁 토글 버튼: 입력 패널과 세션 패널 사이 이동 */}
         <button
           type="button"
           onClick={onToggleMode}
@@ -31,7 +38,7 @@ const SidePanelHeader = ({
           {isSessionMode ? '아이템 입력' : '이전 채팅'}
         </button>
       </div>
-      {/* 접는 버튼(헤더 우측) */}
+      {/* 패널 접기 버튼: collapsed 상태로 전환 */}
       <button
         type="button"
         onClick={onCollapse}

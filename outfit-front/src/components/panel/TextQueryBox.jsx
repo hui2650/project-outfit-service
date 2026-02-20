@@ -1,4 +1,8 @@
-import React from "react";
+/*
+TextQueryBox
+- 텍스트 조건 입력(색/아이템명/스타일 등)을 위한 textarea
+- 입력값은 ChatPageContext의 textQuery로 관리되며 submit 시 서버로 전달
+*/
 
 const TextQueryBox = ({ textQuery, onTextQuery }) => {
   return (
@@ -14,7 +18,7 @@ const TextQueryBox = ({ textQuery, onTextQuery }) => {
         onChange={(e) => onTextQuery(e.target.value)}
       />
     </div>
-  );
-};
+  )
+}
 
-export default TextQueryBox;
+export default TextQueryBox

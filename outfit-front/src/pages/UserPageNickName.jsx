@@ -1,31 +1,35 @@
-import React from "react";
-import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
-import Header from "../components/layout/Header";
-import { useTransition } from "../store/transitionStore";
-import { useAppData } from "../store/appDataStore";
+// src/pages/UserPageNickName.jsx
+import React from 'react'
+import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
+import Header from '../components/layout/Header'
+import { useTransition } from '../store/transitionStore'
+import { useAppData } from '../store/appDataStore'
 
+/*
+UserPageNickName
+- 유저정보 입력 1단계: 닉네임 입력
+- 게스트 기반 흐름이므로 ensureGuestId로 guestId를 보장한 뒤 setGuest로 저장
+- 완료 시 스타일 선택 페이지로 이동
+- 진입 시 resetGuest로 이전 입력 상태를 초기화
+*/
 const UserPageNickName = () => {
-  const nav = useNavigate();
-  const { leaving, handleStart } = useTransition();
+  const nav = useNavigate()
+  const { leaving, handleStart } = useTransition()
 
-  // 입력용 state
-  const [nickname, setNickname] = React.useState("");
+  const [nickname, setNickname] = React.useState('')
 
-  const { setGuest, ensureGuestId } = useAppData();
-
-  const { resetGuest } = useAppData();
+  const { setGuest, ensureGuestId, resetGuest } = useAppData()
 
   React.useEffect(() => {
-    resetGuest();
-  }, [resetGuest]);
+    resetGuest()
+  }, [resetGuest])
 
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{
         opacity: leaving ? 0 : 1,
-
         x: leaving ? -10 : 0,
       }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
@@ -61,16 +65,15 @@ const UserPageNickName = () => {
           type="button"
           disabled={leaving || !nickname.trim()}
           className="text-md px-5 py-2.5 rounded-lg bg-primary text-white font-semibold disabled:opacity-60"
-          // onClick={() => handleStart(() => nav("/user-info-style"))}
           onClick={() =>
             handleStart(() => {
-              const v = nickname.trim();
-              if (!v) return;
+              const v = nickname.trim()
+              if (!v) return
 
-              ensureGuestId();
-              setGuest({ nickname: v });
+              ensureGuestId()
+              setGuest({ nickname: v })
 
-              nav("/user-info-style");
+              nav('/user-info-style')
             })
           }
         >
@@ -81,13 +84,13 @@ const UserPageNickName = () => {
           type="button"
           className="text-md px-5 py-2.5 rounded-lg bg-gray-500 text-white font-semibold disabled:opacity-60"
           disabled={leaving}
-          onClick={() => handleStart(() => nav("/"))}
+          onClick={() => handleStart(() => nav('/'))}
         >
           뒤로
         </button>
       </div>
     </motion.div>
-  );
-};
+  )
+}
 
-export default UserPageNickName;
+export default UserPageNickName

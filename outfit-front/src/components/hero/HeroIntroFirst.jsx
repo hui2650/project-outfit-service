@@ -1,9 +1,14 @@
+// src/components/hero/HeroIntroFirst.jsx
 import React from 'react'
-
 import { motion } from 'framer-motion'
-
 import HeroSectionWrapper from './HeroSectionWrapper'
 
+/*
+HeroIntroFirst
+- 히어로 1섹션
+- 배경 이미지 + 그라데이션 오버레이로 텍스트 가독성 확보
+- handleStart는 페이지 전환(닉네임 입력 페이지로 이동)을 위한 콜백
+*/
 const HeroIntroFirst = ({ leaving, handleStart }) => {
   const bgStyle = {
     backgroundImage: `linear-gradient(to left,
@@ -20,18 +25,14 @@ const HeroIntroFirst = ({ leaving, handleStart }) => {
       initial={{ opacity: 0 }}
       animate={{
         opacity: leaving ? 0 : 1,
-
         x: leaving ? -10 : 0,
       }}
       style={bgStyle}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
     >
-      {/* 배경/오버레이: 이미지가 있으면 여기에 background-image 적용 */}
-
       <div className="w-full">
         <main className="mx-auto flex justify-between items-center max-w-6xl px-6 pb-14 pt-6">
-          {/* Left */}
-
+          {/* 좌측: 서비스 소개 텍스트 + CTA 버튼 */}
           <section className="mx-auto md:mx-0 flex flex-col md:justify-center ">
             <div className="text-xs tracking-widest text-primary/90">
               OUR SERVICE
@@ -50,6 +51,7 @@ const HeroIntroFirst = ({ leaving, handleStart }) => {
               스타일을 찾아드립니다.
             </p>
 
+            {/* CTA: 서비스 시작(유저정보 입력 플로우로 이동) */}
             <motion.button
               type="button"
               onClick={handleStart}
@@ -62,8 +64,7 @@ const HeroIntroFirst = ({ leaving, handleStart }) => {
               서비스 바로가기 <span aria-hidden>→</span>
             </motion.button>
 
-            {/* 스크롤 */}
-
+            {/* 스크롤 안내: 시각적 힌트(고정 위치) */}
             <div className="mt-10 flex flex-col items-center text-white/40 text-xs fixed bottom-8 left-1/2 -translate-x-1/2">
               <div className="h-7 w-5 rounded-full border border-white/20 flex items-start justify-center p-1">
                 <div className="h-2 w-1 rounded-full bg-white/30" />
@@ -73,8 +74,7 @@ const HeroIntroFirst = ({ leaving, handleStart }) => {
             </div>
           </section>
 
-          {/* Right */}
-
+          {/* 우측: 데스크톱에서만 미리보기 이미지(모바일 프레임) */}
           <section className="flex hidden justify-end md:block">
             <div className="w-[300px] h-[640px] bg-black rounded-[40px] border border-white/15 bg-white/5 shadow-2xl flex items-center justify-center overflow-hidden ">
               <img
