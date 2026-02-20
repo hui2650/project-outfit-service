@@ -2,6 +2,12 @@ import React from 'react'
 
 import { motion } from 'framer-motion'
 
+/*
+HeroIntroSection
+- 히어로 2섹션
+- First와 동일
+*/
+
 import HeroSectionWrapper from './HeroSectionWrapper'
 
 const HeroIntroSecond = ({ leaving, handleStart }) => {

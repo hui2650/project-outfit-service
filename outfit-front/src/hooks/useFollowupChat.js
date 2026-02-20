@@ -3,6 +3,19 @@ import { askFollowup } from '../api/chat'
 import { uid } from '../utils/uid'
 import { useAppData } from '../store/appDataStore.jsx'
 
+/**
+ * useFollowupChat({ updateTurn })
+ *
+ * 목적
+ * - 기존 turn 내부의 messages 배열에
+ *   user 메시지 + assistant 메시지를 추가하고
+ * - 서버 응답을 받아 placeholder를 실제 답변으로 교체
+ *
+ * 핵심 구조
+ * - optimistic UI 적용
+ * - assistant 메시지를 먼저 placeholder("…")로 넣고
+ * - 응답 오면 해당 id를 찾아 치환
+ */
 export const useFollowupChat = ({ updateTurn }) => {
   const { guest } = useAppData()
 
@@ -18,7 +31,14 @@ export const useFollowupChat = ({ updateTurn }) => {
     const userMsgId = uid()
     const assistantMsgId = uid()
 
-    // 1) UI에 먼저 user 메시지 + assistant placeholder 추가
+    /**
+     * 1단계: UI 선반영
+     *
+     * - user 메시지 추가
+     * - assistant placeholder 추가
+     *
+     * 서버 응답 기다리지 않음
+     */
     updateTurn(turnId, (t) => ({
       ...t,
       messages: [
@@ -29,6 +49,10 @@ export const useFollowupChat = ({ updateTurn }) => {
     }))
 
     try {
+      /**
+       * 2단계: 서버 요청
+       * guest 정보 포함해서 전달
+       */
       const resp = await askFollowup({
         text,
         requestId,
@@ -41,6 +65,10 @@ export const useFollowupChat = ({ updateTurn }) => {
         style: guest?.style ?? '',
       })
 
+      /**
+       * 서버가 error 형식으로 응답한 경우
+       * placeholder를 error 타입 메시지로 교체
+       */
       if (resp?.error) {
         updateTurn(turnId, (t) => ({
           ...t,
@@ -61,7 +89,9 @@ export const useFollowupChat = ({ updateTurn }) => {
 
       const answer = resp?.answer ?? '답변을 생성하지 못했습니다.'
 
-      // 2) placeholder를 진짜 답변으로 치환
+      /**
+       * 3단계: placeholder → 실제 답변으로 치환
+       */
       updateTurn(turnId, (t) => ({
         ...t,
         messages: (t.messages ?? []).map((m) =>
@@ -69,6 +99,9 @@ export const useFollowupChat = ({ updateTurn }) => {
         ),
       }))
     } catch (e) {
+      /**
+       * 네트워크 오류 처리
+       */
       updateTurn(turnId, (t) => ({
         ...t,
         messages: (t.messages ?? []).map((m) =>
