@@ -6,8 +6,8 @@
  *   문맥(prevAnswer) 추출할 때 제외하기 위한 필터
  */
 function isPlaceholderText(s) {
-  const t = (s ?? '').trim()
-  return !t || t === '…' || t === '...' || t.toLowerCase() === 'loading'
+  const t = (s ?? "").trim();
+  return !t || t === "…" || t === "..." || t.toLowerCase() === "loading";
 }
 
 /**
@@ -27,33 +27,34 @@ function isPlaceholderText(s) {
  * - type/sender 기반
  * - answer 기반
  */
+
 function getLastAssistantText(chatLogs = []) {
   for (let i = chatLogs.length - 1; i >= 0; i--) {
-    const m = chatLogs[i]
-    if (!m) continue
+    const m = chatLogs[i];
+    if (!m) continue;
 
     // 케이스1: role/content 기반 (현재 너의 AIMessage 구조와 잘 맞는 형태)
-    if (m.role === 'assistant' && typeof m.content === 'string') {
-      const c = m.content.trim()
-      if (c && !isPlaceholderText(c)) return c
+    if (m.role === "assistant" && typeof m.content === "string") {
+      const c = m.content.trim();
+      if (c && !isPlaceholderText(c)) return c;
     }
 
     // 케이스2: type/sender 기반 (이전/다른 구조 호환)
     if (
-      (m.type === 'bot' || m.sender === 'assistant') &&
-      typeof m.text === 'string'
+      (m.type === "bot" || m.sender === "assistant") &&
+      typeof m.text === "string"
     ) {
-      const t = m.text.trim()
-      if (t && !isPlaceholderText(t)) return t
+      const t = m.text.trim();
+      if (t && !isPlaceholderText(t)) return t;
     }
 
     // 케이스3: answer 필드 기반 (응답 포맷이 다른 경우 대비)
-    if (m.role === 'assistant' && typeof m.answer === 'string') {
-      const a = m.answer.trim()
-      if (a && !isPlaceholderText(a)) return a
+    if (m.role === "assistant" && typeof m.answer === "string") {
+      const a = m.answer.trim();
+      if (a && !isPlaceholderText(a)) return a;
     }
   }
-  return ''
+  return "";
 }
 
 /**
@@ -74,18 +75,18 @@ export async function askFollowup({
   text,
   requestId = null,
   items = [],
-  category = '',
-  gender = '',
+  category = "",
+  gender = "",
   guestId = null,
-  nickname = '',
-  style = '',
+  nickname = "",
+  style = "",
   chatLogs = [],
 }) {
   // 마지막 assistant 답변 추출
-  const prevAnswerRaw = getLastAssistantText(chatLogs)
+  const prevAnswerRaw = getLastAssistantText(chatLogs);
 
   // payload 과도 확장을 막기 위해 길이 제한
-  const prevAnswer = prevAnswerRaw.slice(0, 800)
+  const prevAnswer = prevAnswerRaw.slice(0, 800);
 
   const payload = {
     text,
@@ -97,16 +98,16 @@ export async function askFollowup({
     nickname,
     style,
     prevAnswer,
-  }
+  };
 
   // 디버깅: 실제 서버에 전달되는 payload 확인
-  console.log('[chat] payload:', payload)
+  console.log("[chat] payload:", payload);
 
-  const res = await fetch('/api/v1/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const res = await fetch("/api/v1/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  })
+  });
 
   /**
    * 응답 파싱 전략
@@ -116,19 +117,19 @@ export async function askFollowup({
    * - 서버가 에러 상황에서 JSON이 아닌 문자열/HTML을 보낼 수 있음
    * - 이 경우에도 rawBody를 확보해 디버깅이 쉬워짐
    */
-  const rawBody = await res.text()
+  const rawBody = await res.text();
 
-  let data
+  let data;
   try {
-    data = rawBody ? JSON.parse(rawBody) : {}
+    data = rawBody ? JSON.parse(rawBody) : {};
   } catch {
     // JSON 파싱 실패 시에도 error 형태로 래핑해 UI 처리 경로를 통일
-    data = { error: { message: rawBody || 'Invalid JSON', code: 'BAD_JSON' } }
+    data = { error: { message: rawBody || "Invalid JSON", code: "BAD_JSON" } };
   }
 
-  console.log('[chat] status:', res.status)
-  console.log('[chat] data:', data)
-  console.log('[chat] rawBody:', rawBody)
+  console.log("[chat] status:", res.status);
+  console.log("[chat] data:", data);
+  console.log("[chat] rawBody:", rawBody);
 
   /**
    * HTTP 실패 처리
@@ -136,10 +137,10 @@ export async function askFollowup({
    * - 아니면 throw로 상위에서 공통 에러 처리
    */
   if (!res.ok) {
-    if (data?.error) return data
-    throw new Error('HTTP_ERROR')
+    if (data?.error) return data;
+    throw new Error("HTTP_ERROR");
   }
 
   // 성공 시: { answer, requestId } 형태 기대
-  return data
+  return data;
 }
